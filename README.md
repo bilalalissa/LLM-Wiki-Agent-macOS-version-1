@@ -2,6 +2,20 @@
 
 # LLM Wiki Agent
 
+<p align="center">
+  <img src="media/Wiki-Agent.png" alt="Wiki Agent Screenshot" width="900">
+</p>
+
+## Demo Videos
+
+### Graph View Demo 1
+
+[Watch Graph View Demo 1](media/Graph-view-1.mov)
+
+### Graph View Demo 2
+
+[Watch Graph View Demo 2](media/Graph-view-2.mov)
+
 LLM Wiki Agent is a local-first macOS app that turns Obsidian vaults into an LLM-maintained second brain. You add raw sources, ask questions, and browse in Obsidian; the app maintains the markdown wiki layer: summaries, concepts, source links, indexes, logs, archives, and notes.
 
 An LLM is a large language model: software that can read, summarize, compare, and synthesize text. The point of an LLM Wiki is to make that work persistent. Instead of asking an LLM to rediscover the same documents every time, the agent incrementally builds a durable wiki that compounds as you add sources and ask questions.
