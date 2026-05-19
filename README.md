@@ -10,11 +10,11 @@
 
 ### Graph View Demo 1
 
-[Watch Graph View Demo 1](media/Graph-view-1.mov)
+[Watch Obsidian Graph View Demo 1](media/Graph-view-1.mov)
 
 ### Graph View Demo 2
 
-[Watch Graph View Demo 2](media/Graph-view-2.mov)
+[Watch Obsidian Graph View Demo 2](media/Graph-view-2.mov)
 
 LLM Wiki Agent is a local-first macOS app that turns Obsidian vaults into an LLM-maintained second brain. You add raw sources, ask questions, and browse in Obsidian; the app maintains the markdown wiki layer: summaries, concepts, source links, indexes, logs, archives, and notes.
 
