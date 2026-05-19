@@ -12,3 +12,4 @@
 .cache
 .tmp/
 .temp/
+build/
