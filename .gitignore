@@ -1,0 +1,14 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea
+
+# Build/cache folders
+.cache
+.tmp/
+.temp/

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD="$ROOT/build/macos"
+APP="$BUILD/LLM Wiki Agent.app"
+CONTENTS="$APP/Contents"
+MACOS="$CONTENTS/MacOS"
+RESOURCES="$CONTENTS/Resources"
+AGENT="$RESOURCES/agent"
+
+rm -rf "$APP"
+mkdir -p "$MACOS" "$RESOURCES" "$AGENT"
+
+swiftc "$ROOT/native/macos/LLMWikiAgent/Sources/LLMWikiAgent/main.swift" \
+  -o "$MACOS/LLMWikiAgent" \
+  -framework AppKit \
+  -framework WebKit \
+  -framework ServiceManagement
+
+cat > "$CONTENTS/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>LLMWikiAgent</string>
+  <key>CFBundleIdentifier</key><string>local.llmwiki.agent</string>
+  <key>CFBundleName</key><string>LLM Wiki Agent</string>
+  <key>CFBundleDisplayName</key><string>LLM Wiki Agent</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+</dict>
+</plist>
+PLIST
+
+cp "$ROOT/package.json" "$AGENT/package.json"
+cp "$ROOT/config.example.env" "$RESOURCES/config.example.env"
+cp -R "$ROOT/src" "$AGENT/src"
+cp -R "$ROOT/docs" "$AGENT/docs"
+find "$AGENT" -name '.DS_Store' -delete
+
+echo "Built: $APP"

@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-llm-wiki-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ingest": "node src/ingest.mjs",
+    "watch": "node src/watch.mjs",
+    "chat": "node src/chat.mjs",
+    "serve": "node src/server.mjs",
+    "check": "node src/check.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
