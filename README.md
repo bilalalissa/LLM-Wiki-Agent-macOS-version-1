@@ -51,7 +51,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 ## Clone And Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/bilalalissa/LLM-Wiki-Agent-macOS-version-1.git
 cd llm-wiki-agent
 ./scripts/build_macos_app.sh
 ./scripts/install_macos_app.sh
