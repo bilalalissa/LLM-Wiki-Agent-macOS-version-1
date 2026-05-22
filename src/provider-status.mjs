@@ -7,6 +7,7 @@ export async function providerStatus(config) {
   return {
     provider: config.provider,
     model: config.model,
+    configFile: config.configFile,
     accessMethod: config.accessMethod,
     authMethod: providerAuthMethod(config),
     credentialConfigured: credentialConfigured(config),

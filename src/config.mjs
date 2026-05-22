@@ -1,10 +1,34 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export const ROOT = process.cwd();
 
-export function loadEnv(file = process.env.LLM_WIKI_ENV_FILE || path.join(ROOT, ".env")) {
+export function configPointerFile() {
+  return path.join(os.homedir(), "Library", "Application Support", "LLM Wiki Agent", "config-path.txt");
+}
+
+export function getConfigFilePath() {
+  if (process.env.LLM_WIKI_ENV_FILE) return process.env.LLM_WIKI_ENV_FILE;
+  const pointer = configPointerFile();
+  if (fs.existsSync(pointer)) {
+    const selected = fs.readFileSync(pointer, "utf8").trim();
+    if (selected) return expandTilde(selected);
+  }
+  return path.join(ROOT, ".env");
+}
+
+export function setConfigFilePath(file) {
+  const resolved = path.resolve(expandTilde(file));
+  fs.mkdirSync(path.dirname(configPointerFile()), { recursive: true });
+  fs.writeFileSync(configPointerFile(), `${resolved}\n`);
+  process.env.LLM_WIKI_ENV_FILE = resolved;
+  return resolved;
+}
+
+export function loadEnv(file = getConfigFilePath()) {
   const env = { ...process.env };
+  env.LLM_WIKI_ENV_FILE = file;
   if (!fs.existsSync(file)) return env;
   const text = fs.readFileSync(file, "utf8");
   for (const line of text.split(/\r?\n/)) {
@@ -26,6 +50,7 @@ export function getConfig() {
   const env = loadEnv();
   return {
     provider: env.DEFAULT_AI_PROVIDER || "openai",
+    configFile: env.LLM_WIKI_ENV_FILE || getConfigFilePath(),
     model: env.DEFAULT_AI_MODEL || "gpt-4.1-mini",
     accessMethod: env.AI_ACCESS_METHOD || "api_key",
     vaultsRoot: path.resolve(ROOT, expandTilde(env.VAULTS_ROOT || ".")),

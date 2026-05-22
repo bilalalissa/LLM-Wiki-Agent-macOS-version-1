@@ -1,8 +1,9 @@
 import http from "node:http";
 import fs from "node:fs";
+import { execFile } from "node:child_process";
 import { deleteArchivedItems } from "./archive-delete.mjs";
 import { restoreArchivedItems } from "./archive-restore.mjs";
-import { getConfig } from "./config.mjs";
+import { getConfig, setConfigFilePath } from "./config.mjs";
 import { answerQuestion } from "./chat-lib.mjs";
 import { saveChatAsRawSource } from "./chat-source.mjs";
 import { listArchiveHistory, listFileHistory } from "./history.mjs";
@@ -18,8 +19,8 @@ import { listTopics } from "./topics.mjs";
 import { listVaults, vaultName } from "./vaults.mjs";
 import { bootstrapVault } from "./vault-bootstrap.mjs";
 
-const config = getConfig();
-const provider = createProvider(config);
+let config = getConfig();
+let provider = createProvider(config);
 let ingestRunning = false;
 let lastIngestMessage = "Auto-ingest has not run yet.";
 
@@ -123,6 +124,55 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname === "/api/provider-status") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(await providerStatus(config)));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/config-path") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ configFile: config.configFile }));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/config-path") {
+    try {
+      const body = await readBody(request);
+      const { path: selectedPath } = JSON.parse(body || "{}");
+      if (!selectedPath || !fs.existsSync(selectedPath)) throw new Error("Choose an existing config file.");
+      setConfigFilePath(selectedPath);
+      reloadRuntimeConfig();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ configFile: config.configFile, status: "Config path updated." }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/config-choose") {
+    try {
+      const selectedPath = await chooseConfigFile();
+      if (!selectedPath) throw new Error("No config file selected.");
+      setConfigFilePath(selectedPath);
+      reloadRuntimeConfig();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ configFile: config.configFile, status: "Config path updated." }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/config-open") {
+    try {
+      await openConfigFile(config.configFile);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "Opened config file.", configFile: config.configFile }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
     return;
   }
 
@@ -233,6 +283,38 @@ function startAutoIngest() {
   setInterval(runAutoIngest, config.watchIntervalMs);
 }
 
+function reloadRuntimeConfig() {
+  config = getConfig();
+  provider = createProvider(config);
+  lastIngestMessage = `Config reloaded from ${config.configFile} at ${formatLocal(new Date())}.`;
+}
+
+function chooseConfigFile() {
+  return runOsascript([
+    "set chosenFile to choose file with prompt \"Choose LLM Wiki Agent config file\"",
+    "POSIX path of chosenFile"
+  ]);
+}
+
+function openConfigFile(file) {
+  return new Promise((resolve, reject) => {
+    execFile("open", ["-a", "TextEdit", file], (error) => error ? reject(error) : resolve(""));
+  });
+}
+
+function runOsascript(lines) {
+  return new Promise((resolve, reject) => {
+    const args = lines.flatMap((line) => ["-e", line]);
+    execFile("osascript", args, { encoding: "utf8" }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error((stderr || error.message).trim()));
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
 async function runAutoIngest() {
   if (ingestRunning) return;
   ingestRunning = true;
@@ -329,6 +411,7 @@ function renderHtml() {
     .muted { color: var(--muted); }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
     .side-topics { position: fixed; top: 20px; right: 20px; width: 250px; max-height: calc(100vh - 40px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); }
+    .side-topic-controls { position: sticky; top: -14px; z-index: 5; background: var(--panel); padding: 14px 0 10px; margin-top: -14px; border-bottom: 1px solid var(--line); }
     .side-topics h2 { margin: 0 0 10px; font-size: 15px; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
@@ -358,6 +441,8 @@ function renderHtml() {
       100% { box-shadow: 0 0 0 3px var(--soft); }
     }
     .source-ref { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
+    .config-path-row { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+    .config-path-row input { min-width: 0; }
     @media (max-width: 1180px) {
       main { padding-right: 20px; }
       .side-topics { position: static; width: auto; max-height: 220px; margin: 0 20px 20px; }
@@ -498,7 +583,16 @@ function renderHtml() {
     </section>
     <section id="provider-panel" class="panel">
       <p class="muted">Current AI provider configuration. Secret values are hidden.</p>
-      <button id="refresh-provider" class="secondary" type="button">Refresh</button>
+      <div class="result-tools">
+        <button id="refresh-provider" class="secondary" type="button">Refresh</button>
+        <button id="open-config-file" class="secondary" type="button">Open config</button>
+        <button id="choose-config-file" class="secondary" type="button">Choose config file</button>
+        <span id="config-path-feedback" class="copy-feedback"></span>
+      </div>
+      <div class="config-path-row">
+        <input id="config-path-input" autocomplete="off" placeholder="Config file path">
+        <button id="save-config-path" class="secondary" type="button">Use path</button>
+      </div>
       <div id="provider-status-box" class="answer">Loading provider status...</div>
     </section>
     <section id="notes-panel" class="panel">
@@ -515,18 +609,20 @@ function renderHtml() {
     </section>
   </main>
   <aside class="side-topics">
-    <h2>Topics & Insights</h2>
-    <div class="side-topic-search-row">
-      <input id="side-topic-search" class="side-topic-search" autocomplete="off" placeholder="Search title, tag, date, area, concept">
-      <button id="side-topic-clear" class="secondary side-topic-clear" type="button" title="Clear topic search">x</button>
-    </div>
-    <div class="side-topic-filters">
-      <select id="side-topic-type" title="Filter by wiki element">
-        <option value="">All elements</option>
-      </select>
-      <input id="side-topic-tag" autocomplete="off" placeholder="Tag">
-      <input id="side-topic-from" type="date" title="Updated from">
-      <input id="side-topic-to" type="date" title="Updated to">
+    <div class="side-topic-controls">
+      <h2>Topics & Insights</h2>
+      <div class="side-topic-search-row">
+        <input id="side-topic-search" class="side-topic-search" autocomplete="off" placeholder="Search title, tag, date, area, concept">
+        <button id="side-topic-clear" class="secondary side-topic-clear" type="button" title="Clear topic search">x</button>
+      </div>
+      <div class="side-topic-filters">
+        <select id="side-topic-type" title="Filter by wiki element">
+          <option value="">All elements</option>
+        </select>
+        <input id="side-topic-tag" autocomplete="off" placeholder="Tag">
+        <input id="side-topic-from" type="date" title="Updated from">
+        <input id="side-topic-to" type="date" title="Updated to">
+      </div>
     </div>
     <div id="topic-list" class="muted">Loading...</div>
   </aside>
@@ -578,6 +674,11 @@ function renderHtml() {
     const providerStatusBox = document.querySelector("#provider-status-box");
     const refreshProvider = document.querySelector("#refresh-provider");
     const providerTabDot = document.querySelector("#provider-tab-dot");
+    const configPathInput = document.querySelector("#config-path-input");
+    const saveConfigPath = document.querySelector("#save-config-path");
+    const chooseConfigFile = document.querySelector("#choose-config-file");
+    const openConfigFile = document.querySelector("#open-config-file");
+    const configPathFeedback = document.querySelector("#config-path-feedback");
     const topicList = document.querySelector("#topic-list");
     const sideTopicSearch = document.querySelector("#side-topic-search");
     const sideTopicClear = document.querySelector("#side-topic-clear");
@@ -696,6 +797,9 @@ function renderHtml() {
       sideTopicSearch.focus();
     });
     refreshProvider.addEventListener("click", loadProviderStatus);
+    saveConfigPath.addEventListener("click", saveConfigPathValue);
+    chooseConfigFile.addEventListener("click", chooseConfigPathValue);
+    openConfigFile.addEventListener("click", openConfigPathValue);
     refreshNotes.addEventListener("click", loadNotes);
 
     async function saveChatAsSource() {
@@ -917,7 +1021,9 @@ function renderHtml() {
         const response = await fetch("/api/provider-status");
         const data = await response.json();
         updateProviderTabStatus(data.statusColor, data.status, data.statusDetail);
+        configPathInput.value = data.configFile || "";
         const rows = [
+          ["Config file", data.configFile],
           ["Provider", data.provider],
           ["Model", data.model],
           ["Access method", data.accessMethod],
@@ -937,6 +1043,38 @@ function renderHtml() {
           '<h3>Safety</h3><ul>' + (data.safety || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join("") + '</ul>';
       } catch (error) {
         providerStatusBox.textContent = error.message;
+      }
+    }
+
+    async function saveConfigPathValue() {
+      await updateConfigPath("/api/config-path", { path: configPathInput.value.trim() });
+    }
+
+    async function chooseConfigPathValue() {
+      await updateConfigPath("/api/config-choose");
+    }
+
+    async function openConfigPathValue() {
+      await updateConfigPath("/api/config-open");
+    }
+
+    async function updateConfigPath(endpoint, body) {
+      configPathFeedback.textContent = "Working...";
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: body ? JSON.stringify(body) : "{}"
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        if (data.configFile) configPathInput.value = data.configFile;
+        configPathFeedback.textContent = data.status || "Done";
+        await loadProviderStatus();
+      } catch (error) {
+        configPathFeedback.textContent = error.message;
+      } finally {
+        setTimeout(() => { configPathFeedback.textContent = ""; }, 3200);
       }
     }
 
@@ -969,7 +1107,7 @@ function renderHtml() {
       const to = sideTopicTo.value;
       const topics = sideTopicsCache
         .filter((topic) => {
-          if (selectedType && topic.type !== selectedType) return false;
+          if (selectedType && !topicMatchesType(topic, selectedType)) return false;
           const tags = topic.tags || [];
           if (selectedTag && !tags.some((tag) => String(tag).toLowerCase().replace(/^#/, "").includes(selectedTag))) return false;
           if (from && String(topic.updated || "") < from) return false;
@@ -993,11 +1131,32 @@ function renderHtml() {
 
     function renderTopicTypeOptions() {
       const current = sideTopicType.value;
-      const types = [...new Set(sideTopicsCache.map((topic) => topic.type).filter(Boolean))].sort();
+      const wikiTypes = ["archive", "areas", "concepts", "entities", "info", "maps", "projects", "questions", "sources", "synthesis"];
+      const observed = sideTopicsCache.map((topic) => topic.type).filter(Boolean);
+      const types = [...new Set([...wikiTypes, ...observed])].sort();
       sideTopicType.innerHTML = '<option value="">All elements</option>' + types.map((type) =>
         '<option value="' + escapeHtml(type) + '">' + escapeHtml(type) + '</option>'
       ).join("");
       if (types.includes(current)) sideTopicType.value = current;
+    }
+
+    function topicMatchesType(topic, selectedType) {
+      const aliases = {
+        archive: ["archive", "archived"],
+        areas: ["area", "areas"],
+        concepts: ["concept", "concepts"],
+        entities: ["entity", "entities"],
+        info: ["info", "information"],
+        maps: ["map", "maps"],
+        projects: ["project", "projects"],
+        questions: ["question", "questions"],
+        sources: ["source", "sources"],
+        synthesis: ["synthesis"]
+      };
+      const values = aliases[selectedType] || [selectedType];
+      const type = String(topic.type || "").toLowerCase();
+      const path = String(topic.path || "").toLowerCase();
+      return values.includes(type) || values.some((value) => path.includes("/" + value + "/") || path.startsWith("wiki/" + value + "/"));
     }
 
     async function openSideTopic(item) {

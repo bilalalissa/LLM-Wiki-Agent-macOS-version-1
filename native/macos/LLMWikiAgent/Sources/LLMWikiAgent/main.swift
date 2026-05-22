@@ -11,12 +11,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var dockIconItem: NSMenuItem!
     private var closeBehaviorItem: NSMenuItem!
     private let closeBehaviorKey = "closeButtonKeepsRunning"
+    private let configPathKey = "configFilePath"
     private let port = "8789"
     private var appSupport: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("LLM Wiki Agent", isDirectory: true)
     }
-    private var configURL: URL { appSupport.appendingPathComponent("config.env") }
+    private var defaultConfigURL: URL { appSupport.appendingPathComponent("config.env") }
+    private var configPointerURL: URL { appSupport.appendingPathComponent("config-path.txt") }
+    private var configURL: URL { selectedConfigURL() }
     private var agentURL: URL { Bundle.main.resourceURL!.appendingPathComponent("agent", isDirectory: true) }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -57,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         let menu = NSMenu()
         menu.addItem(menuItem("Show App", #selector(showApp), "s"))
         menu.addItem(menuItem("Open Config", #selector(openConfig), ","))
+        menu.addItem(menuItem("Choose Config File...", #selector(chooseConfigFile), ""))
         menu.addItem(menuItem("Open Vaults Folder", #selector(openVaults), "v"))
         menu.addItem(NSMenuItem.separator())
         startAtLoginItem = menuItem("Start at Login", #selector(toggleLoginItem), "")
@@ -104,6 +108,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                     self.showAlert("Open Config", "Could not open config.env in TextEdit: \(error.localizedDescription)\n\nConfig path:\n\(self.configURL.path)")
                 }
             }
+        }
+    }
+
+    @objc private func chooseConfigFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose LLM Wiki Agent Config"
+        panel.prompt = "Use Config"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = configURL.deletingLastPathComponent()
+        panel.begin { response in
+            guard response == .OK, let selected = panel.url else { return }
+            self.setSelectedConfigURL(selected)
+            self.ensureConfig()
+            self.repairDefaultConfigIfPossible()
+            self.restartServerAndReload()
+            self.showAlert("Config File Updated", "The app is now using:\n\(selected.path)")
         }
     }
 
@@ -156,6 +178,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 try? FileManager.default.copyItem(at: bundled, to: configURL)
             }
         }
+    }
+
+    private func selectedConfigURL() -> URL {
+        if let pointer = try? String(contentsOf: configPointerURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !pointer.isEmpty {
+            UserDefaults.standard.set(pointer, forKey: configPathKey)
+            return URL(fileURLWithPath: expandTilde(pointer))
+        }
+        if let stored = UserDefaults.standard.string(forKey: configPathKey), !stored.isEmpty {
+            return URL(fileURLWithPath: expandTilde(stored))
+        }
+        return defaultConfigURL
+    }
+
+    private func setSelectedConfigURL(_ url: URL) {
+        try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+        UserDefaults.standard.set(url.path, forKey: configPathKey)
+        try? "\(url.path)\n".write(to: configPointerURL, atomically: true, encoding: .utf8)
     }
 
     private func repairDefaultConfigIfPossible() {
@@ -239,6 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         } catch {
             showAlert("Node.js required", "Install Node.js, then restart LLM Wiki Agent.\n\nThe app checks /opt/homebrew/bin/node, /usr/local/bin/node, and PATH.\n\nError: \(error.localizedDescription)")
         }
+    }
+
+    private func restartServerAndReload() {
+        serverProcess?.terminate()
+        serverProcess = nil
+        startServer()
+        loadAppWhenReady()
     }
 
     private func loadAppWhenReady(attempt: Int = 1) {
