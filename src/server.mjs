@@ -779,7 +779,10 @@ function renderHtml() {
         });
         const data = await response.json();
         if (data.error) throw new Error(data.error);
-        deleteSourcesFeedback.textContent = "Archived; related items are shown in Archive";
+        const archivedCount = (data.results || []).reduce((sum, item) => sum + (item.archived || []).length, 0);
+        deleteSourcesFeedback.textContent = archivedCount
+          ? "Archived " + archivedCount + " related file" + (archivedCount === 1 ? "" : "s")
+          : "No matching files found to archive";
         await loadFiles();
         loadArchives();
         loadTopics();

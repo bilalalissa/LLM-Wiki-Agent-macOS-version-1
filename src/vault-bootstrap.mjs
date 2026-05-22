@@ -162,8 +162,9 @@ When a new source in \`raw/\`, \`raw/inbox/\`, or \`raw/input/\` is an image, PD
 
 1. Move the media file to \`raw/assets/\` unless it is already there.
 2. Create a source page in \`wiki/sources/\` with \`type: source\`, \`media_kind\`, \`source_path\`, and media tags.
-3. Embed images directly in the source page with an Obsidian embed and link every media type back to its local asset.
-4. Add any reliable visual/audio observations only when the agent has actually inspected the media or the human supplied a description.
-5. Link the media source page to relevant concepts, entities, areas, questions, or project pages when the content is known.
-6. Never discard media. Archive retired media under \`raw/assets/archive/\`.`;
+3. Ask the configured provider to inspect/analyze the local media in read-only mode when possible.
+4. Embed images directly in the source page with an Obsidian embed and link every media type back to its local asset.
+5. Add any reliable visual/audio observations only when the agent has actually inspected the media or the human supplied a description.
+6. Link the media source page to relevant concepts, entities, areas, questions, or project pages when the content is known.
+7. Never discard media. Archive retired media under \`raw/assets/archive/\`.`;
 }
