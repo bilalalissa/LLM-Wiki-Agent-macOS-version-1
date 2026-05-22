@@ -2,7 +2,7 @@ import AppKit
 import ServiceManagement
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
@@ -22,14 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         ensureConfig()
+        repairDefaultConfigIfPossible()
         installStatusItem()
         makeWindow()
         startServer()
         runStartupChecks()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            let url = URL(string: "http://127.0.0.1:\(self.port)/?v=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "dev")")!
-            self.webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
-        }
+        loadAppWhenReady()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -38,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func makeWindow() {
         webView = WKWebView(frame: .zero)
+        webView.navigationDelegate = self
+        webView.loadHTMLString(statusHTML("Starting LLM Wiki Agent", "Starting the local wiki server..."), baseURL: nil)
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -158,6 +158,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func repairDefaultConfigIfPossible() {
+        guard var text = try? String(contentsOf: configURL, encoding: .utf8) else { return }
+        let currentRoot = readConfigValue("VAULTS_ROOT") ?? ""
+        let expanded = expandTilde(currentRoot)
+        let isPlaceholder = currentRoot.isEmpty || currentRoot == "~/Documents/Obsidian-Vaults" || !hasAnyVault(in: expanded)
+        guard isPlaceholder, let detected = detectVaultsRoot() else { return }
+        if text.contains("VAULTS_ROOT=") {
+            text = text.replacingOccurrences(of: #"(?m)^VAULTS_ROOT=.*$"#, with: "VAULTS_ROOT=\(detected)", options: .regularExpression)
+        } else {
+            text += "\nVAULTS_ROOT=\(detected)\n"
+        }
+        try? text.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    private func detectVaultsRoot() -> String? {
+        let candidates = [
+            "\(NSHomeDirectory())/Library/Mobile Documents/com~apple~CloudDocs/Obsidian-Vaults",
+            "\(NSHomeDirectory())/Documents/Obsidian-Vaults",
+            "\(NSHomeDirectory())/Obsidian-Vaults"
+        ]
+        return candidates.first { hasAnyVault(in: $0) }
+    }
+
+    private func hasAnyVault(in root: String) -> Bool {
+        guard !root.isEmpty, let items = try? FileManager.default.contentsOfDirectory(atPath: root) else { return false }
+        return items.contains { name in
+            let path = "\(root)/\(name)"
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { return false }
+            return name.hasSuffix("-vault") ||
+                FileManager.default.fileExists(atPath: "\(path)/.obsidian") ||
+                FileManager.default.fileExists(atPath: "\(path)/AGENTS.md")
+        }
+    }
+
     private var closeButtonKeepsRunning: Bool {
         if UserDefaults.standard.object(forKey: closeBehaviorKey) == nil {
             return true
@@ -204,6 +239,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } catch {
             showAlert("Node.js required", "Install Node.js, then restart LLM Wiki Agent.\n\nThe app checks /opt/homebrew/bin/node, /usr/local/bin/node, and PATH.\n\nError: \(error.localizedDescription)")
         }
+    }
+
+    private func loadAppWhenReady(attempt: Int = 1) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "dev"
+        guard let url = URL(string: "http://127.0.0.1:\(port)/?v=\(version)") else { return }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.timeoutInterval = 1.5
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200 && !(data?.isEmpty ?? true)
+            DispatchQueue.main.async {
+                if ok {
+                    self.webView.load(request)
+                } else if attempt < 40 {
+                    self.webView.loadHTMLString(self.statusHTML("Starting LLM Wiki Agent", "Waiting for the local server... attempt \(attempt)/40"), baseURL: nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.loadAppWhenReady(attempt: attempt + 1)
+                    }
+                } else {
+                    let detail = error?.localizedDescription ?? "The local server did not return a page."
+                    self.webView.loadHTMLString(self.statusHTML("Could not load the app", "\(detail)<br><br>Use the menu bar icon -> Open Config to check configuration, then quit and reopen the app."), baseURL: nil)
+                }
+            }
+        }.resume()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        webView.loadHTMLString(statusHTML("Could not load the app", error.localizedDescription), baseURL: nil)
+    }
+
+    private func statusHTML(_ title: String, _ message: String) -> String {
+        """
+        <!doctype html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { margin: 0; font: 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #18202b; }
+            main { max-width: 680px; margin: 80px auto; padding: 0 28px; line-height: 1.5; }
+            h1 { font-size: 24px; margin: 0 0 12px; }
+            p { margin: 0; color: #4b5563; }
+          </style>
+        </head>
+        <body><main><h1>\(title)</h1><p>\(message)</p></main></body>
+        </html>
+        """
     }
 
     private func nodeExecutableURL() -> URL {
@@ -298,6 +378,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let pipe = Pipe()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = args
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = expandedPath()
+        p.environment = env
         p.standardOutput = pipe
         p.standardError = pipe
         try? p.run()

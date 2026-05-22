@@ -28,7 +28,7 @@ export function getConfig() {
     provider: env.DEFAULT_AI_PROVIDER || "openai",
     model: env.DEFAULT_AI_MODEL || "gpt-4.1-mini",
     accessMethod: env.AI_ACCESS_METHOD || "api_key",
-    vaultsRoot: path.resolve(ROOT, env.VAULTS_ROOT || "."),
+    vaultsRoot: path.resolve(ROOT, expandTilde(env.VAULTS_ROOT || ".")),
     watchIntervalMs: Number(env.WATCH_INTERVAL_MS || 5000),
     ingestMaxChars: Number(env.INGEST_MAX_CHARS || 60000),
     chatMaxFiles: Number(env.CHAT_MAX_FILES || 24),
@@ -62,6 +62,13 @@ export function getConfig() {
       baseUrl: env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com"
     }
   };
+}
+
+function expandTilde(value) {
+  const text = String(value || "");
+  if (text === "~") return process.env.HOME || text;
+  if (text.startsWith("~/")) return path.join(process.env.HOME || "", text.slice(2));
+  return text;
 }
 
 export function hasRealKey(value) {
