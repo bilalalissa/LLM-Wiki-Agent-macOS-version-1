@@ -8,9 +8,14 @@ CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 AGENT="$RESOURCES/agent"
+APP_ICON="$ROOT/native/macos/LLMWikiAgent/Resources/AppIcon.icns"
 
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$AGENT"
+
+if [ ! -f "$APP_ICON" ]; then
+  "$ROOT/scripts/generate_app_icon.sh"
+fi
 
 swiftc "$ROOT/native/macos/LLMWikiAgent/Sources/LLMWikiAgent/main.swift" \
   -o "$MACOS/LLMWikiAgent" \
@@ -27,6 +32,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>local.llmwiki.agent</string>
   <key>CFBundleName</key><string>LLM Wiki Agent</string>
   <key>CFBundleDisplayName</key><string>LLM Wiki Agent</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
@@ -35,6 +41,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+cp "$APP_ICON" "$RESOURCES/AppIcon.icns"
 cp "$ROOT/package.json" "$AGENT/package.json"
 cp "$ROOT/config.example.env" "$RESOURCES/config.example.env"
 cp -R "$ROOT/src" "$AGENT/src"

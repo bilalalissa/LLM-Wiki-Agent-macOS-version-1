@@ -41,9 +41,10 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 
 - Watches configured Obsidian vault raw folders.
 - Automatically creates required LLM Wiki files in detected vaults.
-- Ingests markdown/text sources into `wiki/` pages.
+- Ingests markdown/text sources into `wiki/` pages and preserves media sources as local vault assets.
 - Maintains `index.md` and `log.md`.
 - Provides Chat, Local Search, Files, Archive, Topics, Provider, and Notes tabs.
+- Provides a right-side topic explorer that filters by title, tag, wiki element, and updated date.
 - Lets useful chat answers be saved back as raw sources.
 - Supports source archive/restore and permanent archive deletion.
 - Stores user notes inside related markdown files and shows note indicators in results.
@@ -66,7 +67,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 
 ```bash
 git clone https://github.com/bilalalissa/LLM-Wiki-Agent-macOS-version-1.git
-cd llm-wiki-agent
+cd LLM-Wiki-Agent-macOS-version-1
 ./scripts/build_macos_app.sh
 ./scripts/install_macos_app.sh
 open "/Applications/LLM Wiki Agent.app"
@@ -83,6 +84,8 @@ Edit that file from the app menu:
 ```text
 menu bar icon -> Open Config
 ```
+
+`Open Config` opens the app config in TextEdit directly, so macOS does not ask you to choose an application for `config.env`.
 
 [Back to top](#top)
 
@@ -136,6 +139,7 @@ raw/inbox/
 raw/input/
 raw/processed/
 raw/assets/
+raw/assets/archive/
 wiki/sources/
 wiki/entities/
 wiki/concepts/
@@ -185,7 +189,7 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 
 ## How To Use The App
 
-1. Put markdown or text sources into a vault's `raw/inbox/` folder.
+1. Put markdown, text, image, PDF, audio, or video sources into a vault's `raw/inbox/` folder.
 2. Keep the app running. It auto-detects and ingests sources.
 3. Browse generated pages in Obsidian under `wiki/`.
 4. Use Chat for AI-assisted questions.
@@ -196,6 +200,20 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 9. Use Provider to inspect safe provider status without exposing secrets.
 
 Useful chat answers can be saved back into `raw/input/` and ingested like any other source.
+
+Media ingest works as follows:
+
+- Images, PDFs, audio, and video dropped into `raw/` or `raw/inbox/` are moved to `raw/assets/`.
+- The app creates a traceable source page in `wiki/sources/`.
+- Image source pages include an Obsidian embed plus a local asset link.
+- Media facts are not invented. Add a description or ask the agent to inspect media before relying on observations.
+
+The right-side Topics & Insights panel supports:
+
+- free-text search over title, summary, tags, dates, vault, path, and wiki element
+- wiki element filtering, such as source, concept, area, question, or synthesis
+- tag filtering
+- updated-date range filtering
 
 [Back to top](#top)
 
@@ -210,7 +228,10 @@ The native macOS wrapper provides:
 - `Open Vaults Folder`.
 - `Start at Login` toggle.
 - `Show Dock Icon` toggle.
+- `Close Button Keeps Running` toggle.
 - Startup setup checks.
+
+`Close Button Keeps Running` is enabled by default. With it on, clicking the window close button hides the window and keeps the menu bar app and auto-ingest running in the background. Turn it off if you want the close button to quit the app. `Start at Login` may require macOS approval in System Settings.
 
 [Back to top](#top)
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import { createProvider } from "./provider.mjs";
 import {
   ensureDir,
+  isMediaRawFile,
   listRawCandidates,
   readVaultContract,
   readVaultIndex,
@@ -22,6 +23,9 @@ export async function ingestVault(vaultPath, config, provider = createProvider(c
 
 export async function ingestFile(vaultPath, sourcePath, config, provider = createProvider(config)) {
   const receivedAt = new Date();
+  if (isMediaRawFile(sourcePath)) {
+    return ingestMediaFile(vaultPath, sourcePath, receivedAt);
+  }
   const sourceText = fs.readFileSync(sourcePath, "utf8").slice(0, config.ingestMaxChars);
   const contract = readVaultContract(vaultPath);
   const index = readVaultIndex(vaultPath);
@@ -71,6 +75,74 @@ export async function ingestFile(vaultPath, sourcePath, config, provider = creat
     processed: processedRel,
     conceptPages
   };
+}
+
+function ingestMediaFile(vaultPath, sourcePath, receivedAt) {
+  const date = today();
+  const ext = path.extname(sourcePath).toLowerCase();
+  const sourceTitle = path.basename(sourcePath, ext);
+  const slug = slugify(sourceTitle);
+  const assetRel = uniqueRel(vaultPath, `raw/assets/${date}--${slug}${ext}`);
+  const sourceRel = uniqueRel(vaultPath, `wiki/sources/${date}--${slug}.md`);
+  const mediaKind = mediaKindFor(ext);
+  const sourcePagePath = path.join(vaultPath, sourceRel);
+  const assetPath = path.join(vaultPath, assetRel);
+
+  ensureDir(path.dirname(assetPath));
+  ensureDir(path.dirname(sourcePagePath));
+  fs.renameSync(sourcePath, assetPath);
+
+  fs.writeFileSync(sourcePagePath, renderMediaSourcePage({
+    date,
+    sourceTitle,
+    assetRel,
+    mediaKind,
+    ext
+  }));
+
+  const analysis = {
+    summary: `${mediaKind} source preserved as a local asset for later review and synthesis.`,
+    concepts: [],
+    key_points: []
+  };
+  updateIndex(vaultPath, { date, sourceRel, sourceTitle, analysis, conceptPages: [] });
+  appendLog(vaultPath, {
+    date,
+    sourceRel,
+    sourcePath,
+    processedRel: assetRel,
+    sourceTitle,
+    conceptPages: [],
+    receivedAt,
+    sourceKind: mediaKind
+  });
+
+  return {
+    vault: vaultName(vaultPath),
+    source: path.relative(vaultPath, sourcePath),
+    sourcePage: sourceRel,
+    processed: assetRel,
+    conceptPages: []
+  };
+}
+
+function uniqueRel(vaultPath, initialRel) {
+  const parsed = path.parse(initialRel);
+  let rel = initialRel;
+  let counter = 2;
+  while (fs.existsSync(path.join(vaultPath, rel))) {
+    rel = path.join(parsed.dir, `${parsed.name}-${counter}${parsed.ext}`).replace(/\\/g, "/");
+    counter += 1;
+  }
+  return rel.replace(/\\/g, "/");
+}
+
+function mediaKindFor(ext) {
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(ext)) return "image";
+  if ([".mp4", ".mov", ".m4v"].includes(ext)) return "video";
+  if ([".mp3", ".wav", ".m4a", ".aiff"].includes(ext)) return "audio";
+  if (ext === ".pdf") return "PDF";
+  return "media";
 }
 
 async function analyzeSource(provider, input) {
@@ -176,6 +248,58 @@ ${bulletList(analysis.contradictions.length ? analysis.contradictions : ["None y
 `;
 }
 
+function renderMediaSourcePage({ date, sourceTitle, assetRel, mediaKind, ext }) {
+  const preview = mediaKind === "image" ? `\n![[${assetRel}]]\n` : "";
+  return `---
+type: source
+status: active
+created: ${date}
+updated: ${date}
+source_path: ${assetRel}
+media_kind: ${mediaKind}
+sources: []
+tags:
+  - llm-wiki
+  - source
+  - media
+  - ${mediaKind.toLowerCase()}
+---
+
+# ${sourceTitle}
+
+## Summary
+
+${mediaKind} source preserved as a local asset. Review the media and add a human or AI-assisted description if its visual/audio content is important for later synthesis.
+
+## Media
+${preview}
+- File: [[${assetRel}]]
+- Kind: ${mediaKind}
+- Extension: \`${ext}\`
+
+## Key Points
+
+- Local media has been moved into \`raw/assets/\` so Obsidian can keep it with the vault.
+- This page is the traceable wiki source for the media file.
+
+## Evidence
+
+- Source file: \`${assetRel}\`
+
+## Links
+
+- 
+
+## Open Questions
+
+- What does this media show or prove?
+
+## Contradictions
+
+None yet.
+`;
+}
+
 function renderConceptPage({ date, concept, sourceRel }) {
   return `---
 type: concept
@@ -238,7 +362,7 @@ function insertTableLine(text, heading, line) {
   return `${before}\n${line}${after}`;
 }
 
-function appendLog(vaultPath, { date, sourceRel, sourcePath, processedRel, sourceTitle, conceptPages, receivedAt }) {
+function appendLog(vaultPath, { date, sourceRel, sourcePath, processedRel, sourceTitle, conceptPages, receivedAt, sourceKind = "text" }) {
   const logPath = path.join(vaultPath, "log.md");
   const relSource = path.relative(vaultPath, sourcePath);
   const processedAt = new Date();
@@ -254,7 +378,7 @@ Sources:
 - \`${processedRel}\`
 
 Notes:
-- Ingested from \`${relSource}\` and moved to \`${processedRel}\`.
+- Ingested ${sourceKind} source from \`${relSource}\` and moved to \`${processedRel}\`.
 - Received at: ${formatLocal(receivedAt)}
 - Processed at: ${formatLocal(processedAt)}
 

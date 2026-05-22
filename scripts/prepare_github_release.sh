@@ -18,14 +18,17 @@ copy_dir() {
   local src="$1"
   local dst="$2"
   mkdir -p "$dst"
-  (cd "$src" && tar --exclude='.*' -cf - .) | (cd "$dst" && tar -xf -)
+  (cd "$src" && tar --exclude='.DS_Store' --exclude='.git' --exclude='.gitignore' --exclude='.env' --exclude='.env.*' -cf - .) | (cd "$dst" && tar -xf -)
 }
 
-copy_file "$ROOT/README.github.md" "$OUT/README.md"
+copy_file "$ROOT/README.md" "$OUT/README.md"
 copy_file "$ROOT/package.json" "$OUT/package.json"
 copy_file "$ROOT/config.example.env" "$OUT/config.example.env"
 copy_dir "$ROOT/src" "$OUT/src"
 copy_dir "$ROOT/docs" "$OUT/docs"
+if [ -d "$ROOT/media" ]; then
+  copy_dir "$ROOT/media" "$OUT/media"
+fi
 copy_dir "$ROOT/native" "$OUT/native"
 copy_dir "$ROOT/scripts" "$OUT/scripts"
 

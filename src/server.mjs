@@ -333,6 +333,10 @@ function renderHtml() {
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
     .side-topic-clear { flex: 0 0 34px; width: 34px; padding: 0; text-align: center; }
+    .side-topic-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+    .side-topic-filters select, .side-topic-filters input { width: 100%; min-width: 0; box-sizing: border-box; padding: 7px; font-size: 13px; }
+    .side-topic-filters .wide { grid-column: 1 / -1; }
+    .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
     .side-topics button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
     .side-topics button:hover { background: var(--soft); }
     .status { font-size: 13px; color: var(--muted); margin: -6px 0 16px; }
@@ -483,11 +487,12 @@ function renderHtml() {
             <th>Type</th>
             <th>Vault</th>
             <th>Path</th>
+            <th>Tags</th>
             <th>Updated</th>
           </tr>
         </thead>
         <tbody id="topics-body">
-          <tr><td colspan="6" class="muted">Loading...</td></tr>
+          <tr><td colspan="7" class="muted">Loading...</td></tr>
         </tbody>
       </table>
     </section>
@@ -512,8 +517,16 @@ function renderHtml() {
   <aside class="side-topics">
     <h2>Topics & Insights</h2>
     <div class="side-topic-search-row">
-      <input id="side-topic-search" class="side-topic-search" autocomplete="off" placeholder="Search topics">
+      <input id="side-topic-search" class="side-topic-search" autocomplete="off" placeholder="Search title, tag, date, area, concept">
       <button id="side-topic-clear" class="secondary side-topic-clear" type="button" title="Clear topic search">x</button>
+    </div>
+    <div class="side-topic-filters">
+      <select id="side-topic-type" title="Filter by wiki element">
+        <option value="">All elements</option>
+      </select>
+      <input id="side-topic-tag" autocomplete="off" placeholder="Tag">
+      <input id="side-topic-from" type="date" title="Updated from">
+      <input id="side-topic-to" type="date" title="Updated to">
     </div>
     <div id="topic-list" class="muted">Loading...</div>
   </aside>
@@ -568,6 +581,10 @@ function renderHtml() {
     const topicList = document.querySelector("#topic-list");
     const sideTopicSearch = document.querySelector("#side-topic-search");
     const sideTopicClear = document.querySelector("#side-topic-clear");
+    const sideTopicType = document.querySelector("#side-topic-type");
+    const sideTopicTag = document.querySelector("#side-topic-tag");
+    const sideTopicFrom = document.querySelector("#side-topic-from");
+    const sideTopicTo = document.querySelector("#side-topic-to");
     const statusEl = document.querySelector("#status");
     const themeSelect = document.querySelector("#theme-select");
     const selectionToolbar = document.querySelector("#selection-toolbar");
@@ -665,8 +682,16 @@ function renderHtml() {
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
     sideTopicSearch.addEventListener("input", renderSideTopics);
+    sideTopicType.addEventListener("change", renderSideTopics);
+    sideTopicTag.addEventListener("input", renderSideTopics);
+    sideTopicFrom.addEventListener("change", renderSideTopics);
+    sideTopicTo.addEventListener("change", renderSideTopics);
     sideTopicClear.addEventListener("click", () => {
       sideTopicSearch.value = "";
+      sideTopicType.value = "";
+      sideTopicTag.value = "";
+      sideTopicFrom.value = "";
+      sideTopicTo.value = "";
       renderSideTopics();
       sideTopicSearch.focus();
     });
@@ -860,13 +885,13 @@ function renderHtml() {
     }
 
     async function loadTopics() {
-      topicsBody.innerHTML = '<tr><td colspan="6" class="muted">Loading...</td></tr>';
+      topicsBody.innerHTML = '<tr><td colspan="7" class="muted">Loading...</td></tr>';
       try {
         const response = await fetch("/api/topics");
         const data = await response.json();
         const topics = data.topics || [];
         if (!topics.length) {
-          topicsBody.innerHTML = '<tr><td colspan="6" class="muted">No topics yet.</td></tr>';
+          topicsBody.innerHTML = '<tr><td colspan="7" class="muted">No topics yet.</td></tr>';
           return;
         }
         topicsBody.innerHTML = topics.map((topic, index) => '<tr>' +
@@ -875,10 +900,11 @@ function renderHtml() {
           '<td>' + escapeHtml(topic.type) + '</td>' +
           '<td>' + escapeHtml(topic.vault) + '</td>' +
           '<td class="path">' + escapeHtml(topic.path) + '</td>' +
+          '<td>' + escapeHtml((topic.tags || []).join(", ")) + '</td>' +
           '<td>' + escapeHtml(topic.updated) + '</td>' +
         '</tr>').join("");
       } catch (error) {
-        topicsBody.innerHTML = '<tr><td colspan="6">' + escapeHtml(error.message) + '</td></tr>';
+        topicsBody.innerHTML = '<tr><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
       }
     }
 
@@ -925,6 +951,7 @@ function renderHtml() {
         const response = await fetch("/api/topics");
         const data = await response.json();
         sideTopicsCache = (data.topics || []).filter((topic) => !isScaffoldTopic(topic));
+        renderTopicTypeOptions();
         renderSideTopics();
       } catch (error) {
         topicList.textContent = error.message;
@@ -933,10 +960,19 @@ function renderHtml() {
 
     function renderSideTopics() {
       const query = sideTopicSearch.value.trim().toLowerCase();
+      const selectedType = sideTopicType.value;
+      const selectedTag = sideTopicTag.value.trim().toLowerCase().replace(/^#/, "");
+      const from = sideTopicFrom.value;
+      const to = sideTopicTo.value;
       const topics = sideTopicsCache
         .filter((topic) => {
+          if (selectedType && topic.type !== selectedType) return false;
+          const tags = topic.tags || [];
+          if (selectedTag && !tags.some((tag) => String(tag).toLowerCase().replace(/^#/, "").includes(selectedTag))) return false;
+          if (from && String(topic.updated || "") < from) return false;
+          if (to && String(topic.updated || "") > to) return false;
           if (!query) return true;
-          return [topic.title, topic.summary, topic.type, topic.vault]
+          return [topic.title, topic.summary, topic.type, topic.vault, topic.updated, topic.created, topic.path, ...tags]
             .some((value) => String(value || "").toLowerCase().includes(query));
         })
         .slice(0, 120);
@@ -945,11 +981,20 @@ function renderHtml() {
         return;
       }
       topicList.innerHTML = topics.map((topic) =>
-        '<button type="button" data-title="' + escapeHtml(topic.title) + '" data-vault="' + escapeHtml(topic.vault) + '" data-path="' + escapeHtml(topic.path) + '" title="' + escapeHtml(topic.summary || "") + '">' + escapeHtml(topic.title) + '</button>'
+        '<button type="button" data-title="' + escapeHtml(topic.title) + '" data-vault="' + escapeHtml(topic.vault) + '" data-path="' + escapeHtml(topic.path) + '" title="' + escapeHtml(topic.summary || "") + '">' + escapeHtml(topic.title) + '<span class="side-topic-meta">' + escapeHtml(topic.type || "") + (topic.updated ? " | " + escapeHtml(topic.updated) : "") + '</span></button>'
       ).join("");
       topicList.querySelectorAll("button").forEach((item) => {
         item.addEventListener("click", () => openSideTopic(item));
       });
+    }
+
+    function renderTopicTypeOptions() {
+      const current = sideTopicType.value;
+      const types = [...new Set(sideTopicsCache.map((topic) => topic.type).filter(Boolean))].sort();
+      sideTopicType.innerHTML = '<option value="">All elements</option>' + types.map((type) =>
+        '<option value="' + escapeHtml(type) + '">' + escapeHtml(type) + '</option>'
+      ).join("");
+      if (types.includes(current)) sideTopicType.value = current;
     }
 
     async function openSideTopic(item) {

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { listVaults, readIfExists, vaultName } from "./vaults.mjs";
+import { isIngestibleRawFile, listVaults, readIfExists, vaultName } from "./vaults.mjs";
 
 export function listFileHistory(config) {
   const records = [];
@@ -32,13 +32,14 @@ export function listArchiveHistory(config) {
 }
 
 function recordsFromVault(vaultPath) {
-  const processedDir = path.join(vaultPath, "raw", "processed");
-  if (!fs.existsSync(processedDir)) return [];
   const sourcePages = mapSourcePages(vaultPath);
   const files = [];
-  walk(processedDir, files);
+  for (const dir of [path.join(vaultPath, "raw", "processed"), path.join(vaultPath, "raw", "assets")]) {
+    if (fs.existsSync(dir)) walk(dir, files);
+  }
   return files
-    .filter((file) => file.endsWith(".md") || file.endsWith(".txt"))
+    .filter((file) => isIngestibleRawFile(file))
+    .filter((file) => !path.relative(vaultPath, file).replace(/\\/g, "/").includes("/archive/"))
     .map((file) => {
       const rel = path.relative(vaultPath, file);
       const stats = fs.statSync(file);
@@ -73,13 +74,14 @@ function mapSourcePages(vaultPath) {
 function archiveRecordsFromVault(vaultPath) {
   const roots = [
     { dir: path.join(vaultPath, "raw", "processed", "archive"), kind: "raw source" },
+    { dir: path.join(vaultPath, "raw", "assets", "archive"), kind: "media source" },
     { dir: path.join(vaultPath, "wiki", "archive"), kind: "wiki page" }
   ];
   const records = [];
   for (const root of roots) {
     const files = [];
     if (fs.existsSync(root.dir)) walk(root.dir, files);
-    for (const file of files.filter((item) => item.endsWith(".md") || item.endsWith(".txt"))) {
+    for (const file of files.filter((item) => isIngestibleRawFile(item))) {
       const stats = fs.statSync(file);
       records.push({
         vault: vaultName(vaultPath),

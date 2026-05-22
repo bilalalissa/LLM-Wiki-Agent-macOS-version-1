@@ -10,6 +10,7 @@ export function bootstrapVault(vaultPath) {
     "raw/processed",
     "raw/processed/archive",
     "raw/assets",
+    "raw/assets/archive",
     "wiki/sources",
     "wiki/entities",
     "wiki/concepts",
@@ -28,10 +29,20 @@ export function bootstrapVault(vaultPath) {
     }
   }
   ensureFile(vaultPath, "AGENTS.md", agentsTemplate(), created);
+  ensureAgentsMediaRules(vaultPath, created);
   ensureFile(vaultPath, "CLAUDE.md", "See [[AGENTS]] for the LLM Wiki operating schema.\n", created);
   ensureFile(vaultPath, "index.md", indexTemplate(), created);
   ensureFile(vaultPath, "log.md", logTemplate(), created);
   return created;
+}
+
+function ensureAgentsMediaRules(vaultPath, created) {
+  const file = path.join(vaultPath, "AGENTS.md");
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, "utf8");
+  if (text.includes("## Media Ingest Rules")) return;
+  fs.writeFileSync(file, `${text.trim()}\n\n${mediaRulesTemplate()}\n`);
+  created.push("AGENTS.md media rules");
 }
 
 function ensureFile(vaultPath, rel, content, created) {
@@ -95,7 +106,7 @@ raw/
   inbox/        New sources waiting to be ingested.
   input/        Agent-saved chat answers waiting to be ingested.
   processed/    Sources already ingested. Preserve original content.
-  assets/       Local images, PDFs, audio, screenshots, and downloaded attachments.
+  assets/       Processed local images, PDFs, audio, screenshots, video, and downloaded attachments.
 
 wiki/
   sources/      One summary page per ingested source.
@@ -126,9 +137,13 @@ Use source-backed claims and Obsidian wiki links. Never present an inference as 
 1. Read the raw source.
 2. Create one source summary page in \`wiki/sources/\`.
 3. Update or create affected concept/entity/area/question/synthesis pages.
-4. Move the source to \`raw/processed/\`.
+4. Move text sources to \`raw/processed/\` and media sources to \`raw/assets/\`.
 5. Update \`index.md\`.
 6. Append an ingest entry to \`log.md\`.
+
+## Media Ingest Rules
+
+${mediaRulesTemplate().replace("## Media Ingest Rules\n\n", "")}
 
 ## Query Workflow
 
@@ -138,4 +153,17 @@ Use source-backed claims and Obsidian wiki links. Never present an inference as 
 4. File durable answers back into the wiki when useful.
 5. Append a query entry to \`log.md\`.
 `;
+}
+
+function mediaRulesTemplate() {
+  return `## Media Ingest Rules
+
+When a new source in \`raw/\`, \`raw/inbox/\`, or \`raw/input/\` is an image, PDF, audio file, video, screenshot, or other local media:
+
+1. Move the media file to \`raw/assets/\` unless it is already there.
+2. Create a source page in \`wiki/sources/\` with \`type: source\`, \`media_kind\`, \`source_path\`, and media tags.
+3. Embed images directly in the source page with an Obsidian embed and link every media type back to its local asset.
+4. Add any reliable visual/audio observations only when the agent has actually inspected the media or the human supplied a description.
+5. Link the media source page to relevant concepts, entities, areas, questions, or project pages when the content is known.
+6. Never discard media. Archive retired media under \`raw/assets/archive/\`.`;
 }

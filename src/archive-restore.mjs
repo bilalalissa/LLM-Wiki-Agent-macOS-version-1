@@ -38,6 +38,9 @@ function activeRelForArchive(rel) {
   if (rel.startsWith("raw/processed/archive/")) {
     return rel.replace(/^raw\/processed\/archive\//, "raw/processed/");
   }
+  if (rel.startsWith("raw/assets/archive/")) {
+    return rel.replace(/^raw\/assets\/archive\//, "raw/assets/");
+  }
   if (rel.startsWith("wiki/archive/")) {
     return rel.replace(/^wiki\/archive\//, "wiki/");
   }
@@ -58,7 +61,7 @@ function normalizeRel(value) {
 }
 
 function isArchiveRel(rel) {
-  return rel.startsWith("raw/processed/archive/") || rel.startsWith("wiki/archive/");
+  return rel.startsWith("raw/processed/archive/") || rel.startsWith("raw/assets/archive/") || rel.startsWith("wiki/archive/");
 }
 
 function uniquePath(file) {

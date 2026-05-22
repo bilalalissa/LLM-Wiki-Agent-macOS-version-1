@@ -145,6 +145,7 @@ function archiveIfExists(vaultPath, fromRel, toRel, archived) {
 
 function archiveRawRel(rawRel) {
   const base = path.basename(rawRel);
+  if (rawRel.startsWith("raw/assets/")) return `raw/assets/archive/${base}`;
   return `raw/processed/archive/${base}`;
 }
 

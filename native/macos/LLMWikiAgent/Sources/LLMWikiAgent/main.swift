@@ -2,11 +2,13 @@ import AppKit
 import ServiceManagement
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
     private var serverProcess: Process?
+    private var closeBehaviorItem: NSMenuItem!
+    private let closeBehaviorKey = "closeButtonKeepsRunning"
     private let port = "8789"
     private var appSupport: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -40,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "LLM Wiki Agent"
+        window.delegate = self
         window.center()
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
@@ -55,9 +58,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Show Dock Icon", action: #selector(toggleDockIcon), keyEquivalent: ""))
+        closeBehaviorItem = NSMenuItem(title: "Close Button Keeps Running", action: #selector(toggleCloseBehavior), keyEquivalent: "")
+        closeBehaviorItem.state = closeButtonKeepsRunning ? .on : .off
+        menu.addItem(closeBehaviorItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if closeButtonKeepsRunning {
+            sender.orderOut(nil)
+            NSApp.setActivationPolicy(.accessory)
+            return false
+        }
+        NSApp.terminate(nil)
+        return false
     }
 
     @objc private func showApp() {
@@ -67,7 +83,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openConfig() {
-        NSWorkspace.shared.open(configURL)
+        let textEdit = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open([configURL], withApplicationAt: textEdit, configuration: configuration) { _, error in
+            if let error {
+                DispatchQueue.main.async {
+                    self.showAlert("Open Config", "Could not open config.env in TextEdit: \(error.localizedDescription)\n\nConfig path:\n\(self.configURL.path)")
+                }
+            }
+        }
     }
 
     @objc private func openVaults() {
@@ -97,6 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if next == .regular { showApp() }
     }
 
+    @objc private func toggleCloseBehavior() {
+        UserDefaults.standard.set(!closeButtonKeepsRunning, forKey: closeBehaviorKey)
+        closeBehaviorItem.state = closeButtonKeepsRunning ? .on : .off
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -109,6 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? FileManager.default.copyItem(at: bundled, to: configURL)
             }
         }
+    }
+
+    private var closeButtonKeepsRunning: Bool {
+        if UserDefaults.standard.object(forKey: closeBehaviorKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: closeBehaviorKey)
     }
 
     private func startServer() {
