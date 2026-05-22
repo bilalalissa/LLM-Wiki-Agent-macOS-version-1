@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         menu.addItem(menuItem("Quit", #selector(quit), "q"))
         statusItem.menu = menu
         updateMenuStates()
+        installMainMenu()
     }
 
     private func menuItem(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
@@ -80,6 +81,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         item.target = self
         item.isEnabled = true
         return item
+    }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(menuItem("Quit LLM Wiki Agent", #selector(quit), "q"))
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(menuItem("Close Window", #selector(closeWindowCommand), "w"))
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.mainMenu = mainMenu
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -164,6 +181,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     @objc private func toggleCloseBehavior() {
         UserDefaults.standard.set(!closeButtonKeepsRunning, forKey: closeBehaviorKey)
         updateMenuStates()
+    }
+
+    @objc private func closeWindowCommand() {
+        _ = windowShouldClose(window)
     }
 
     @objc private func quit() {

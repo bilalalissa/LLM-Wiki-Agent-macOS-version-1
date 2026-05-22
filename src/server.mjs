@@ -396,6 +396,7 @@ function renderHtml() {
     .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; }
     .answer p { margin: 0 0 12px; }
     .answer ul, .answer ol { margin-top: 0; padding-left: 24px; }
+    .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
     mark.agent-highlight { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 2px; }
     .note-anchor { color: inherit; }
     .note-indicator { display: inline-block; margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 0 5px; font-size: 11px; color: var(--accent); background: var(--soft); vertical-align: super; cursor: default; }
@@ -1231,6 +1232,7 @@ function renderHtml() {
       const lines = String(markdown).split(/\\r?\\n/);
       const html = [];
       let inList = false;
+      let sectionCount = 0;
       for (const line of lines) {
         if (/^\\s*[-*]\\s+/.test(line)) {
           if (!inList) {
@@ -1244,9 +1246,16 @@ function renderHtml() {
           html.push("</ul>");
           inList = false;
         }
-        if (/^[A-Za-z0-9_-]+-vault\\s+\\/\\s+wiki\\/.+/.test(line)) html.push("<p class=\\"source-ref\\">" + inlineMarkdown(line) + "</p>");
+        if (/^[A-Za-z0-9_-]+-vault\\s+\\/\\s+wiki\\/.+/.test(line)) {
+          if (sectionCount > 0 && html[html.length - 1] !== '<hr class="result-separator">') html.push('<hr class="result-separator">');
+          html.push("<p class=\\"source-ref\\">" + inlineMarkdown(line) + "</p>");
+        }
         else if (/^###\\s+/.test(line)) html.push("<h3>" + inlineMarkdown(line.replace(/^###\\s+/, "")) + "</h3>");
-        else if (/^##\\s+/.test(line)) html.push("<h2>" + inlineMarkdown(line.replace(/^##\\s+/, "")) + "</h2>");
+        else if (/^##\\s+/.test(line)) {
+          if (sectionCount > 0) html.push('<hr class="result-separator">');
+          sectionCount += 1;
+          html.push("<h2>" + inlineMarkdown(line.replace(/^##\\s+/, "")) + "</h2>");
+        }
         else if (/^#\\s+/.test(line)) html.push("<h1>" + inlineMarkdown(line.replace(/^#\\s+/, "")) + "</h1>");
         else if (line.trim()) html.push("<p>" + inlineMarkdown(line) + "</p>");
       }
