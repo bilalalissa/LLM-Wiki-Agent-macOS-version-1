@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
     private var serverProcess: Process?
+    private var startAtLoginItem: NSMenuItem!
+    private var dockIconItem: NSMenuItem!
     private var closeBehaviorItem: NSMenuItem!
     private let closeBehaviorKey = "closeButtonKeepsRunning"
     private let port = "8789"
@@ -25,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         startServer()
         runStartupChecks()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            self.webView.load(URLRequest(url: URL(string: "http://127.0.0.1:\(self.port)")!))
+            let url = URL(string: "http://127.0.0.1:\(self.port)/?v=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "dev")")!
+            self.webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData))
         }
     }
 
@@ -52,18 +55,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "text.book.closed", accessibilityDescription: "LLM Wiki Agent")
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Show App", action: #selector(showApp), keyEquivalent: "s"))
-        menu.addItem(NSMenuItem(title: "Open Config", action: #selector(openConfig), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Open Vaults Folder", action: #selector(openVaults), keyEquivalent: "v"))
+        menu.addItem(menuItem("Show App", #selector(showApp), "s"))
+        menu.addItem(menuItem("Open Config", #selector(openConfig), ","))
+        menu.addItem(menuItem("Open Vaults Folder", #selector(openVaults), "v"))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Show Dock Icon", action: #selector(toggleDockIcon), keyEquivalent: ""))
-        closeBehaviorItem = NSMenuItem(title: "Close Button Keeps Running", action: #selector(toggleCloseBehavior), keyEquivalent: "")
-        closeBehaviorItem.state = closeButtonKeepsRunning ? .on : .off
+        startAtLoginItem = menuItem("Start at Login", #selector(toggleLoginItem), "")
+        dockIconItem = menuItem("Show Dock Icon", #selector(toggleDockIcon), "")
+        closeBehaviorItem = menuItem("Close Button Keeps Running", #selector(toggleCloseBehavior), "")
+        menu.addItem(startAtLoginItem)
+        menu.addItem(dockIconItem)
         menu.addItem(closeBehaviorItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(menuItem("Quit", #selector(quit), "q"))
         statusItem.menu = menu
+        updateMenuStates()
+    }
+
+    private func menuItem(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        item.isEnabled = true
+        return item
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -80,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.setActivationPolicy(.regular)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        updateMenuStates()
     }
 
     @objc private func openConfig() {
@@ -107,6 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 } else {
                     try SMAppService.mainApp.register()
                 }
+                updateMenuStates()
+                if SMAppService.mainApp.status == .requiresApproval {
+                    showAlert("Start at Login", "macOS requires approval in System Settings -> General -> Login Items.")
+                }
             } catch {
                 showAlert("Start at Login", "Could not update login item: \(error.localizedDescription)")
             }
@@ -119,11 +136,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let next: NSApplication.ActivationPolicy = NSApp.activationPolicy() == .regular ? .accessory : .regular
         NSApp.setActivationPolicy(next)
         if next == .regular { showApp() }
+        updateMenuStates()
     }
 
     @objc private func toggleCloseBehavior() {
         UserDefaults.standard.set(!closeButtonKeepsRunning, forKey: closeBehaviorKey)
-        closeBehaviorItem.state = closeButtonKeepsRunning ? .on : .off
+        updateMenuStates()
     }
 
     @objc private func quit() {
@@ -147,19 +165,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return UserDefaults.standard.bool(forKey: closeBehaviorKey)
     }
 
+    private func updateMenuStates() {
+        closeBehaviorItem?.state = closeButtonKeepsRunning ? .on : .off
+        dockIconItem?.state = NSApp.activationPolicy() == .regular ? .on : .off
+        if #available(macOS 13.0, *) {
+            switch SMAppService.mainApp.status {
+            case .enabled:
+                startAtLoginItem?.state = .on
+                startAtLoginItem?.title = "Start at Login"
+            case .requiresApproval:
+                startAtLoginItem?.state = .mixed
+                startAtLoginItem?.title = "Start at Login (Needs Approval)"
+            default:
+                startAtLoginItem?.state = .off
+                startAtLoginItem?.title = "Start at Login"
+            }
+        } else {
+            startAtLoginItem?.state = .off
+        }
+    }
+
     private func startServer() {
+        stopServerOnConfiguredPort()
         let process = Process()
         process.currentDirectoryURL = agentURL
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.executableURL = nodeExecutableURL()
         process.arguments = ["node", "src/server.mjs"]
+        if process.executableURL?.lastPathComponent == "node" {
+            process.arguments = ["src/server.mjs"]
+        }
         var env = ProcessInfo.processInfo.environment
         env["LLM_WIKI_ENV_FILE"] = configURL.path
+        env["PATH"] = expandedPath()
         process.environment = env
         serverProcess = process
         do {
             try process.run()
         } catch {
-            showAlert("Node.js required", "Install Node.js, then restart LLM Wiki Agent.\n\nError: \(error.localizedDescription)")
+            showAlert("Node.js required", "Install Node.js, then restart LLM Wiki Agent.\n\nThe app checks /opt/homebrew/bin/node, /usr/local/bin/node, and PATH.\n\nError: \(error.localizedDescription)")
+        }
+    }
+
+    private func nodeExecutableURL() -> URL {
+        for candidate in ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"] {
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+        return URL(fileURLWithPath: "/usr/bin/env")
+    }
+
+    private func expandedPath() -> String {
+        let existing = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        return "/opt/homebrew/bin:/usr/local/bin:\(existing)"
+    }
+
+    private func stopServerOnConfiguredPort() {
+        let output = runQuick(["lsof", "-nP", "-tiTCP:\(port)", "-sTCP:LISTEN"])
+        for line in output.split(separator: "\n") {
+            let pid = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !pid.isEmpty && pid != String(ProcessInfo.processInfo.processIdentifier) {
+                _ = runQuick(["kill", pid])
+            }
         }
     }
 
