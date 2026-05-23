@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { listVaults, listWikiFiles, vaultName } from "./vaults.mjs";
 
-export function answerLocally(question, config) {
+export function answerLocally(question, config, options = {}) {
   const terms = tokenize(question);
   if (!terms.length) {
     return "Ask a question or enter a few topic words. Local mode searches only the stored wiki pages and does not call an AI provider.";
   }
 
-  const matches = findMatches(terms, config);
+  const matches = findMatches(terms, config, options);
   if (!matches.length) {
     return [
       "No strong local match found in the stored wiki pages.",
@@ -37,13 +37,13 @@ export function answerLocally(question, config) {
   return lines.join("\n");
 }
 
-function findMatches(terms, config) {
+function findMatches(terms, config, options) {
   const matches = [];
   for (const vaultPath of listVaults(config.vaultsRoot)) {
     for (const file of listWikiFiles(vaultPath)) {
       const relativePath = path.relative(vaultPath, file);
       if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
-      const text = stripUserNotes(fs.readFileSync(file, "utf8"));
+      const text = filterStructuralSections(stripUserNotes(fs.readFileSync(file, "utf8")), options);
       const score = scoreText(`${relativePath}\n${text}`, terms);
       if (score <= 0) continue;
       matches.push({
@@ -115,6 +115,28 @@ function clean(markdown) {
 
 function stripUserNotes(markdown) {
   return String(markdown).replace(/\n## User Notes[\s\S]*$/m, "");
+}
+
+function filterStructuralSections(markdown, options = {}) {
+  const hidden = new Set(Array.isArray(options.hiddenSections) ? options.hiddenSections : []);
+  if (!hidden.size) return markdown;
+  const sectionMap = {
+    openQuestions: "Open Questions",
+    contradictions: "Contradictions",
+    sourceLearningQuestions: "Source's Related Learning Questions",
+    openLearningQuestions: "Open Learning Questions"
+  };
+  let result = markdown;
+  for (const key of hidden) {
+    const heading = sectionMap[key];
+    if (heading) result = removeSection(result, heading);
+  }
+  return result;
+}
+
+function removeSection(markdown, heading) {
+  const pattern = new RegExp(`\\n##\\s+${escapeRegExp(heading)}\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)`);
+  return markdown.replace(pattern, "");
 }
 
 function stripMarkdown(value) {

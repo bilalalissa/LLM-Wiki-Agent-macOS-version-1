@@ -228,6 +228,8 @@ Return strict JSON with this shape:
   "entities": [{"name": "Entity Name", "summary": "one sentence"}],
   "open_questions": ["question"],
   "contradictions": ["contradiction or empty"],
+  "source_learning_questions": ["learning question grounded in this media source"],
+  "open_learning_questions": ["broader learning question that expands context, transfer, or global awareness"],
   "processing_notes": ["what was inspected and any limitations"]
 }`;
 
@@ -251,7 +253,9 @@ function parseMediaJson(text, media) {
     concepts: asArray(raw.concepts).map(normalizeNamed),
     entities: asArray(raw.entities).map(normalizeNamed),
     open_questions: asArray(raw.open_questions),
-    contradictions: asArray(raw.contradictions)
+    contradictions: asArray(raw.contradictions),
+    source_learning_questions: asArray(raw.source_learning_questions),
+    open_learning_questions: asArray(raw.open_learning_questions)
   };
   return {
     ...parsed,
@@ -273,6 +277,8 @@ function fallbackMediaAnalysis(media, error) {
     entities: [],
     open_questions: ["What does this media show, contain, or prove?"],
     contradictions: [],
+    source_learning_questions: [`What should I learn from this ${media.kind} source before connecting it to other notes?`],
+    open_learning_questions: [`How does this ${media.kind} source connect to broader concepts, tools, or real-world contexts?`],
     processing_notes: [`Media analysis fallback used: ${error.message}`],
     analyzed: false,
     status: "fallback"
@@ -359,7 +365,9 @@ Return strict JSON with this shape:
   "concepts": [{"name": "Concept Name", "summary": "one sentence"}],
   "entities": [{"name": "Entity Name", "summary": "one sentence"}],
   "open_questions": ["question"],
-  "contradictions": ["contradiction or empty"]
+  "contradictions": ["contradiction or empty"],
+  "source_learning_questions": ["learning question grounded in this source"],
+  "open_learning_questions": ["broader learning question that expands context, transfer, or global awareness"]
 }
 
 Source text:
@@ -381,7 +389,9 @@ function parseJson(text) {
     concepts: asArray(data.concepts).map(normalizeNamed),
     entities: asArray(data.entities).map(normalizeNamed),
     open_questions: asArray(data.open_questions),
-    contradictions: asArray(data.contradictions)
+    contradictions: asArray(data.contradictions),
+    source_learning_questions: asArray(data.source_learning_questions),
+    open_learning_questions: asArray(data.open_learning_questions)
   };
 }
 
@@ -424,6 +434,14 @@ ${analysis.summary}
 ## Key Points
 
 ${bulletList(analysis.key_points)}
+
+## Source's Related Learning Questions
+
+${bulletList(learningQuestions(analysis.source_learning_questions, sourceTitle))}
+
+## Open Learning Questions
+
+${bulletList(openLearningQuestions(analysis.open_learning_questions, sourceTitle))}
 
 ## Evidence
 
@@ -479,6 +497,14 @@ ${media.width && media.height ? `- Dimensions: ${media.width} x ${media.height}`
 ## Key Points
 
 ${bulletList(analysis.key_points)}
+
+## Source's Related Learning Questions
+
+${bulletList(learningQuestions(analysis.source_learning_questions, sourceTitle))}
+
+## Open Learning Questions
+
+${bulletList(openLearningQuestions(analysis.open_learning_questions, sourceTitle))}
 
 ## Processing Notes
 
@@ -536,7 +562,29 @@ ${concept.summary}
 ## Contradictions
 
 None yet.
+
+## Source's Related Learning Questions
+
+- How does this concept help explain or organize the source that introduced it?
+
+## Open Learning Questions
+
+- Where else could this concept apply beyond the original source?
 `;
+}
+
+function learningQuestions(items, title) {
+  return items?.length ? items : [
+    `What are the most important ideas in "${title}" that I should be able to explain without rereading the source?`,
+    `Which examples, terms, or claims from "${title}" should become follow-up notes or practice prompts?`
+  ];
+}
+
+function openLearningQuestions(items, title) {
+  return items?.length ? items : [
+    `How does "${title}" connect to adjacent topics, tools, people, places, or systems outside this source?`,
+    `What would change my understanding of this topic if I found a newer, broader, or conflicting source?`
+  ];
 }
 
 function updateIndex(vaultPath, { date, sourceRel, sourceTitle, analysis, conceptPages }) {

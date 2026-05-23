@@ -30,10 +30,20 @@ export function bootstrapVault(vaultPath) {
   }
   ensureFile(vaultPath, "AGENTS.md", agentsTemplate(), created);
   ensureAgentsMediaRules(vaultPath, created);
+  ensureAgentsLearningRules(vaultPath, created);
   ensureFile(vaultPath, "CLAUDE.md", "See [[AGENTS]] for the LLM Wiki operating schema.\n", created);
   ensureFile(vaultPath, "index.md", indexTemplate(), created);
   ensureFile(vaultPath, "log.md", logTemplate(), created);
   return created;
+}
+
+function ensureAgentsLearningRules(vaultPath, created) {
+  const file = path.join(vaultPath, "AGENTS.md");
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, "utf8");
+  if (text.includes("## Learning Sections")) return;
+  fs.writeFileSync(file, `${text.trim()}\n\n${learningSectionsTemplate()}\n`);
+  created.push("AGENTS.md learning rules");
 }
 
 function ensureAgentsMediaRules(vaultPath, created) {
@@ -132,6 +142,8 @@ Every generated wiki page should include YAML frontmatter with \`type\`, \`statu
 
 Use source-backed claims and Obsidian wiki links. Never present an inference as a source fact.
 
+${learningSectionsTemplate()}
+
 ## Ingest Workflow
 
 1. Read the raw source.
@@ -153,6 +165,19 @@ ${mediaRulesTemplate().replace("## Media Ingest Rules\n\n", "")}
 4. File durable answers back into the wiki when useful.
 5. Append a query entry to \`log.md\`.
 `;
+}
+
+function learningSectionsTemplate() {
+  return `## Learning Sections
+
+Generated source pages and generated linked wiki pages should include these structural sections when useful:
+
+- \`Open Questions\`: unresolved source or wiki maintenance questions.
+- \`Contradictions\`: source conflicts, tension, or "None yet."
+- \`Source's Related Learning Questions\`: source-grounded questions that help the user practice, connect, and retain the material.
+- \`Open Learning Questions\`: broader questions that expand knowledge, transfer, and global awareness beyond the source.
+
+Learning questions must be phrased as questions, not claims. They should help the user discover adjacent domains, real-world implications, history, geography, ethics, systems, or cross-topic links without inventing facts.`;
 }
 
 function mediaRulesTemplate() {

@@ -42,6 +42,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - Watches configured Obsidian vault raw folders.
 - Automatically creates required LLM Wiki files in detected vaults.
 - Ingests markdown/text sources into `wiki/` pages and preserves media sources as local vault assets.
+- Adds learning-analysis sections to processed pages so source knowledge turns into practice questions and broader follow-up questions.
 - Maintains `index.md` and `log.md`.
 - Provides Chat, Local Search, Files, Archive, Topics, Provider, and Notes tabs.
 - Provides a right-side topic explorer that filters by title, tag, wiki element, and updated date.
@@ -207,6 +208,15 @@ Media ingest works as follows:
 - The app creates a traceable source page in `wiki/sources/`.
 - Image source pages include an Obsidian embed plus a local asset link.
 - Media facts are not invented. Add a description or ask the agent to inspect media before relying on observations.
+
+Processed wiki pages include structural analysis sections:
+
+- `Open Questions` for unresolved source or maintenance questions.
+- `Contradictions` for conflicts, tension, or explicit "None yet" status.
+- `Source's Related Learning Questions` for source-grounded practice and retention questions.
+- `Open Learning Questions` for broader connections, transfer, and global-awareness follow-up.
+
+On source pages, the two learning-question sections are placed immediately after `Key Points`. The Local tab includes toggles to show or hide all four structural sections together or one by one in result output.
 
 The right-side Topics & Insights panel supports:
 
