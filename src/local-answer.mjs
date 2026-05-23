@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { listVaults, listWikiFiles, vaultName } from "./vaults.mjs";
 
-export function answerLocally(question, config, options = {}) {
+export function answerLocally(question, config) {
   const terms = tokenize(question);
   if (!terms.length) {
     return "Ask a question or enter a few topic words. Local mode searches only the stored wiki pages and does not call an AI provider.";
   }
 
-  const matches = findMatches(terms, config, options);
+  const matches = findMatches(terms, config);
   if (!matches.length) {
     return [
       "No strong local match found in the stored wiki pages.",
@@ -37,14 +37,13 @@ export function answerLocally(question, config, options = {}) {
   return lines.join("\n");
 }
 
-function findMatches(terms, config, options) {
+function findMatches(terms, config) {
   const matches = [];
   for (const vaultPath of listVaults(config.vaultsRoot)) {
     for (const file of listWikiFiles(vaultPath)) {
       const relativePath = path.relative(vaultPath, file);
       if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
       const fullText = stripUserNotes(fs.readFileSync(file, "utf8"));
-      const displayText = filterStructuralSections(fullText, options);
       const score = scoreText(`${relativePath}\n${fullText}`, terms);
       if (score <= 0) continue;
       matches.push({
@@ -52,7 +51,7 @@ function findMatches(terms, config, options) {
         relativePath,
         title: extractTitle(fullText, relativePath),
         score,
-        snippets: extractSnippets(displayText, terms, fullText)
+        snippets: extractSnippets(fullText, terms)
       });
     }
   }
@@ -69,7 +68,7 @@ function scoreText(text, terms) {
   return score;
 }
 
-function extractSnippets(markdown, terms, fallbackMarkdown = markdown) {
+function extractSnippets(markdown, terms) {
   const sections = markdown
     .replace(/^---[\s\S]*?---\s*/m, "")
     .split(/\n(?=##?\s+)/)
@@ -86,15 +85,7 @@ function extractSnippets(markdown, terms, fallbackMarkdown = markdown) {
   if (ranked.length) return ranked;
 
   const summary = sections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
-  if (summary) return [firstUsefulSentence(summary)].filter(Boolean);
-
-  const fallbackSections = fallbackMarkdown
-    .replace(/^---[\s\S]*?---\s*/m, "")
-    .split(/\n(?=##?\s+)/)
-    .map((section) => clean(section))
-    .filter(Boolean);
-  const fallbackSummary = fallbackSections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
-  return [firstUsefulSentence(fallbackSummary || clean(markdown) || clean(fallbackMarkdown))].filter(Boolean);
+  return [firstUsefulSentence(summary || clean(markdown))].filter(Boolean);
 }
 
 function firstUsefulSentence(text) {
@@ -124,28 +115,6 @@ function clean(markdown) {
 
 function stripUserNotes(markdown) {
   return String(markdown).replace(/\n## User Notes[\s\S]*$/m, "");
-}
-
-function filterStructuralSections(markdown, options = {}) {
-  const hidden = new Set(Array.isArray(options.hiddenSections) ? options.hiddenSections : []);
-  if (!hidden.size) return markdown;
-  const sectionMap = {
-    openQuestions: "Open Questions",
-    contradictions: "Contradictions",
-    sourceLearningQuestions: "Source's Related Learning Questions",
-    openLearningQuestions: "Open Learning Questions"
-  };
-  let result = markdown;
-  for (const key of hidden) {
-    const heading = sectionMap[key];
-    if (heading) result = removeSection(result, heading);
-  }
-  return result;
-}
-
-function removeSection(markdown, heading) {
-  const pattern = new RegExp(`(^|\\n)##\\s+${escapeRegExp(heading)}\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)`);
-  return markdown.replace(pattern, "");
 }
 
 function stripMarkdown(value) {

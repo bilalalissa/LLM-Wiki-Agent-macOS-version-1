@@ -293,10 +293,8 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/api/local-ask") {
     try {
       const body = await readBody(request);
-      const { question, hiddenSections } = JSON.parse(body || "{}");
-      const answer = answerLocally(String(question || ""), config, {
-        hiddenSections: Array.isArray(hiddenSections) ? hiddenSections : []
-      });
+      const { question } = JSON.parse(body || "{}");
+      const answer = answerLocally(String(question || ""), config);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ answer }));
     } catch (error) {
@@ -438,9 +436,6 @@ function renderHtml() {
     th.sortable::after { content: " ↕"; color: var(--muted); font-weight: 400; }
     th.sortable.sort-asc::after { content: " ↑"; color: var(--accent); }
     th.sortable.sort-desc::after { content: " ↓"; color: var(--accent); }
-    .local-section-toggles { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
-    .local-section-toggles label { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--panel); font-size: 13px; }
-    .local-section-toggles input { flex: 0 0 auto; }
     .result-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 10px; }
     .copy-feedback { color: var(--muted); font-size: 13px; min-width: 54px; }
     .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; }
@@ -554,13 +549,6 @@ function renderHtml() {
         <button id="clear-local" class="secondary" type="button">Clear</button>
       </form>
       <p class="muted">Local mode searches stored wiki markdown only. It does not call an AI provider and does not connect to the internet.</p>
-      <div class="local-section-toggles" aria-label="Local result structural sections">
-        <label><input id="local-toggle-all-structure" type="checkbox" checked> All structural sections</label>
-        <label><input class="local-structure-toggle" type="checkbox" data-section="openQuestions" checked> Open Questions</label>
-        <label><input class="local-structure-toggle" type="checkbox" data-section="contradictions" checked> Contradictions</label>
-        <label><input class="local-structure-toggle" type="checkbox" data-section="sourceLearningQuestions" checked> Source's Related Learning Questions</label>
-        <label><input class="local-structure-toggle" type="checkbox" data-section="openLearningQuestions" checked> Open Learning Questions</label>
-      </div>
       <div class="result-tools">
         <select id="local-copy-format">
           <option value="text">Pure text</option>
@@ -738,8 +726,6 @@ function renderHtml() {
     const localButton = document.querySelector("#local-ask");
     const clearLocal = document.querySelector("#clear-local");
     const localAnswer = document.querySelector("#local-answer");
-    const localToggleAllStructure = document.querySelector("#local-toggle-all-structure");
-    const localStructureToggles = document.querySelectorAll(".local-structure-toggle");
     const copyLocal = document.querySelector("#copy-local");
     const localCopyFormat = document.querySelector("#local-copy-format");
     const localCopyFeedback = document.querySelector("#local-copy-feedback");
@@ -871,11 +857,11 @@ function renderHtml() {
         const response = await fetch("/api/local-ask", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ question: localInput.value, hiddenSections: localHiddenSections() })
+          body: JSON.stringify({ question: localInput.value })
         });
         const data = await response.json();
         lastLocalMarkdown = data.answer || data.error || "No answer.";
-        localAnswer.innerHTML = renderMarkdown(filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()));
+        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
         applyNoteAnnotations(localAnswer);
       } catch (error) {
         localAnswer.textContent = error.message;
@@ -884,22 +870,9 @@ function renderHtml() {
       }
     }
 
-    localToggleAllStructure.addEventListener("change", () => {
-      localStructureToggles.forEach((item) => { item.checked = localToggleAllStructure.checked; });
-      persistLocalSectionToggles();
-      refreshLocalForStructureChange();
-    });
-    localStructureToggles.forEach((item) => {
-      item.addEventListener("change", () => {
-        localToggleAllStructure.checked = Array.from(localStructureToggles).every((toggle) => toggle.checked);
-        persistLocalSectionToggles();
-        refreshLocalForStructureChange();
-      });
-    });
-
     copyChat.addEventListener("click", () => copyResult(answer, lastChatMarkdown, chatCopyFormat.value, chatCopyFeedback));
     saveChatSource.addEventListener("click", saveChatAsSource);
-    copyLocal.addEventListener("click", () => copyResult(localAnswer, filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()), localCopyFormat.value, localCopyFeedback));
+    copyLocal.addEventListener("click", () => copyResult(localAnswer, lastLocalMarkdown, localCopyFormat.value, localCopyFeedback));
     clearChat.addEventListener("click", () => clearChatResult());
     clearLocal.addEventListener("click", () => clearLocalResult());
     renameSourceButton.addEventListener("click", renameSelectedSource);
@@ -964,42 +937,6 @@ function renderHtml() {
         if (table === "topics") renderTopicsTable();
       });
     });
-
-    restoreLocalSectionToggles();
-
-    function localHiddenSections() {
-      return Array.from(localStructureToggles)
-        .filter((item) => !item.checked)
-        .map((item) => item.dataset.section);
-    }
-
-    function persistLocalSectionToggles() {
-      localStorage.setItem("llm-wiki-local-hidden-sections", JSON.stringify(localHiddenSections()));
-    }
-
-    function restoreLocalSectionToggles() {
-      try {
-        const hidden = new Set(JSON.parse(localStorage.getItem("llm-wiki-local-hidden-sections") || "[]"));
-        localStructureToggles.forEach((item) => { item.checked = !hidden.has(item.dataset.section); });
-        localToggleAllStructure.checked = Array.from(localStructureToggles).every((toggle) => toggle.checked);
-      } catch {
-        localToggleAllStructure.checked = true;
-      }
-    }
-
-    function rerenderLocalAnswer() {
-      if (!lastLocalMarkdown.trim()) return;
-      localAnswer.innerHTML = renderMarkdown(filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()));
-      applyNoteAnnotations(localAnswer);
-    }
-
-    function refreshLocalForStructureChange() {
-      if (localInput.value.trim()) {
-        runLocalSearch();
-      } else {
-        rerenderLocalAnswer();
-      }
-    }
 
     async function saveChatAsSource() {
       const question = input.value.trim();
@@ -1557,7 +1494,7 @@ function renderHtml() {
         const response = await fetch("/api/topic-content?" + params.toString());
         const data = await response.json();
         lastLocalMarkdown = data.answer || data.error || "No topic content.";
-        localAnswer.innerHTML = renderMarkdown(filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()));
+        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
         applyNoteAnnotations(localAnswer);
       } catch (error) {
         localAnswer.textContent = error.message;
@@ -1631,22 +1568,6 @@ function renderHtml() {
       }
       if (inList) html.push("</ul>");
       return html.join("");
-    }
-
-    function filterStructuralMarkdown(markdown, hiddenSections) {
-      const names = {
-        openQuestions: "Open Questions",
-        contradictions: "Contradictions",
-        sourceLearningQuestions: "Source's Related Learning Questions",
-        openLearningQuestions: "Open Learning Questions"
-      };
-      let result = String(markdown || "");
-      for (const key of hiddenSections || []) {
-        const heading = names[key];
-        if (!heading) continue;
-        result = result.replace(new RegExp("(^|\\n)##\\s+" + escapeRegExp(heading) + "\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)"), "");
-      }
-      return result;
     }
 
     function inlineMarkdown(value) {
@@ -1867,7 +1788,7 @@ function renderHtml() {
         applyNoteAnnotations(answer);
       }
       if (lastLocalMarkdown) {
-        localAnswer.innerHTML = renderMarkdown(filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()));
+        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
         applyNoteAnnotations(localAnswer);
       }
     }
