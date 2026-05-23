@@ -180,7 +180,7 @@ function learningSectionsTemplate() {
 
 Generated source pages and generated linked wiki pages should include these structural sections when useful:
 
-- \`Open Questions\`: unresolved source or wiki maintenance questions.
+- \`Open Questions\`: unresolved source or wiki maintenance questions with current answers or explicit unresolved status.
 - \`Contradictions\`: source conflicts, tension, or "None yet."
 - \`Source's Related Learning Questions\`: source-grounded questions and answers that help the user practice, connect, and retain the material.
 - \`Open Learning Questions\`: broader questions and answers that expand knowledge, transfer, and global awareness beyond the source.
@@ -189,7 +189,7 @@ Each learning item should use this format:
 
 \`\`\`md
 - Q: Question text?
-  A: Source-grounded answer text.
+  - A: Source-grounded answer text.
 \`\`\`
 
 Learning questions must be phrased as questions, not claims. Answers must remain source-grounded, distinguish uncertainty from fact, and help the user discover adjacent domains, real-world implications, history, geography, ethics, systems, or cross-topic links without inventing facts.`;

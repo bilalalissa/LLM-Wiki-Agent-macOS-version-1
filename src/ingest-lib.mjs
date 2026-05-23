@@ -233,7 +233,7 @@ Return strict JSON with this shape:
   "key_points": ["durable point"],
   "concepts": [{"name": "Concept Name", "summary": "one sentence"}],
   "entities": [{"name": "Entity Name", "summary": "one sentence"}],
-  "open_questions": ["question"],
+  "open_questions": [{"question": "unresolved source or wiki question", "answer": "current source-grounded answer, partial answer, or why it remains unresolved"}],
   "contradictions": ["contradiction or empty"],
   "source_learning_questions": [{"question": "learning question grounded in this media source", "answer": "source-grounded answer"}],
   "open_learning_questions": [{"question": "broader learning question that expands context, transfer, or global awareness", "answer": "careful answer using source-grounded connections and noting uncertainty"}],
@@ -242,7 +242,7 @@ Return strict JSON with this shape:
 
   try {
     const text = await provider.complete([
-      { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent visual, audio, or document facts. Write generated content in the source's primary language when the content is known." },
+      { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent visual, audio, or document facts. Write generated content in the source's primary language when the content is known. Open questions must include current answers or state why they remain unresolved." },
       { role: "user", content: prompt }
     ], { allowTools: true });
     return parseMediaJson(text, input.media);
@@ -260,7 +260,7 @@ function parseMediaJson(text, media) {
     key_points: asArray(raw.key_points),
     concepts: asArray(raw.concepts).map(normalizeNamed),
     entities: asArray(raw.entities).map(normalizeNamed),
-    open_questions: asArray(raw.open_questions),
+    open_questions: asLearningItems(raw.open_questions),
     contradictions: asArray(raw.contradictions),
     source_learning_questions: asLearningItems(raw.source_learning_questions),
     open_learning_questions: asLearningItems(raw.open_learning_questions)
@@ -284,7 +284,10 @@ function fallbackMediaAnalysis(media, error) {
     ],
     concepts: [{ name: `${media.kind} source`, summary: `A locally preserved ${media.kind} file awaiting deeper interpretation.` }],
     entities: [],
-    open_questions: ["What does this media show, contain, or prove?"],
+    open_questions: [{
+      question: "What does this media show, contain, or prove?",
+      answer: "This remains unresolved until the media content is inspected or the user supplies a reliable description."
+    }],
     contradictions: [],
     source_learning_questions: [{
       question: `What should I learn from this ${media.kind} source before connecting it to other notes?`,
@@ -386,7 +389,7 @@ Return strict JSON with this shape:
   "key_points": ["durable point"],
   "concepts": [{"name": "Concept Name", "summary": "one sentence"}],
   "entities": [{"name": "Entity Name", "summary": "one sentence"}],
-  "open_questions": ["question"],
+  "open_questions": [{"question": "unresolved source or wiki question", "answer": "current source-grounded answer, partial answer, or why it remains unresolved"}],
   "contradictions": ["contradiction or empty"],
   "source_learning_questions": [{"question": "learning question grounded in this source", "answer": "source-grounded answer"}],
   "open_learning_questions": [{"question": "broader learning question that expands context, transfer, or global awareness", "answer": "careful answer using source-grounded connections and noting uncertainty"}]
@@ -396,7 +399,7 @@ Source text:
 ${input.sourceText}`;
 
   const text = await provider.complete([
-    { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent facts. Write generated content in the source's primary language unless the source is meaningfully multilingual." },
+    { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent facts. Write generated content in the source's primary language unless the source is meaningfully multilingual. Open questions must include current answers or state why they remain unresolved." },
     { role: "user", content: prompt }
   ]);
   return parseJson(text);
@@ -411,7 +414,7 @@ function parseJson(text) {
     key_points: asArray(data.key_points),
     concepts: asArray(data.concepts).map(normalizeNamed),
     entities: asArray(data.entities).map(normalizeNamed),
-    open_questions: asArray(data.open_questions),
+    open_questions: asLearningItems(data.open_questions),
     contradictions: asArray(data.contradictions),
     source_learning_questions: asLearningItems(data.source_learning_questions),
     open_learning_questions: asLearningItems(data.open_learning_questions)
@@ -487,7 +490,7 @@ ${analysis.concepts.map((concept) => `- [[wiki/concepts/${slugify(concept.name)}
 
 ## Open Questions
 
-${bulletList(analysis.open_questions)}
+${learningBlock(answeredQuestions(analysis.open_questions, sourceTitle, analysis))}
 
 ## Contradictions
 
@@ -556,7 +559,7 @@ ${analysis.concepts.map((concept) => `- [[wiki/concepts/${slugify(concept.name)}
 
 ## Open Questions
 
-${bulletList(analysis.open_questions)}
+${learningBlock(answeredQuestions(analysis.open_questions, sourceTitle, analysis))}
 
 ## Contradictions
 
@@ -592,7 +595,8 @@ ${concept.summary}
 
 ## Open Questions
 
-- 
+- Q: What remains unresolved about this concept?
+  - A: No specific unresolved question has been recorded yet.
 
 ## Contradictions
 
@@ -601,12 +605,12 @@ None yet.
 ## Source's Related Learning Questions
 
 - Q: How does this concept help explain or organize the source that introduced it?
-  A: It gives the source a reusable concept page that can collect definitions, links, evidence, and follow-up questions across future sources.
+  - A: It gives the source a reusable concept page that can collect definitions, links, evidence, and follow-up questions across future sources.
 
 ## Open Learning Questions
 
 - Q: Where else could this concept apply beyond the original source?
-  A: Use future ingests and queries to connect this concept to adjacent tools, domains, examples, and real-world systems without adding unsupported claims.
+  - A: Use future ingests and queries to connect this concept to adjacent tools, domains, examples, and real-world systems without adding unsupported claims.
 `;
 }
 
@@ -636,11 +640,18 @@ function openLearningQuestions(items, title, analysis = {}) {
   ];
 }
 
+function answeredQuestions(items, title, analysis = {}) {
+  return items?.length ? items : [{
+    question: `What remains unresolved about "${title}"?`,
+    answer: "No specific open question has been recorded yet."
+  }];
+}
+
 function learningBlock(items) {
   return items?.length ? items.map((item) => {
     const question = typeof item === "string" ? item : item.question;
     const answer = typeof item === "string" ? "" : item.answer;
-    return `- Q: ${question || ""}\n  A: ${answer || "Answer not yet supplied."}`;
+    return `- Q: ${question || ""}\n  - A: ${answer || "Answer not yet supplied."}`;
   }).join("\n") : "- ";
 }
 

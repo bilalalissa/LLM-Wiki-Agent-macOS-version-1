@@ -233,12 +233,12 @@ Media ingest works as follows:
 
 Processed wiki pages include structural analysis sections:
 
-- `Open Questions` for unresolved source or maintenance questions.
+- `Open Questions` for unresolved source or maintenance questions with current answers or explicit unresolved status.
 - `Contradictions` for conflicts, tension, or explicit "None yet" status.
 - `Source's Related Learning Questions` for source-grounded practice and retention questions with answers.
 - `Open Learning Questions` for broader connections, transfer, and global-awareness follow-up with answers.
 
-On source pages, the two learning-question sections are placed immediately after `Key Points`. Each item is stored as `Q:` and `A:` so the wiki captures both the question and the current source-grounded answer. The Local tab includes toggles to show or hide all four structural sections together or one by one in result output.
+On source pages, the two learning-question sections are placed immediately after `Key Points`. Each item is stored as `Q:` with an indented `A:` answer so the wiki captures both the question and the current source-grounded answer. The Local tab includes toggles to show or hide all four structural sections together or one by one in result output.
 
 The right-side Topics & Insights panel supports:
 
