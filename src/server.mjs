@@ -2020,7 +2020,8 @@ function renderHtml() {
     }
 
     function noteHasMedia(note) {
-      return /!\\[\\[[^\\]]+\\]\\]/.test(String(note || ""));
+      return /!\\[\\[[^\\]]+\\]\\]/.test(String(note || "")) ||
+        /\\[[^\\]]+\\]\\((raw\\/assets\\/user-notes\\/[^)]+)\\)/.test(String(note || ""));
     }
 
     function renderNotePopover(note) {
@@ -2047,7 +2048,17 @@ function renderHtml() {
         .replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>")
         .replace(/\\*([^*]+)\\*/g, "<em>$1</em>")
         .replace(/\\x60([^\\x60]+)\\x60/g, "<code>$1</code>")
-        .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+        .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, (_match, label, href) => renderNoteLink(label, href, vault));
+    }
+
+    function renderNoteLink(label, href, vault) {
+      const cleanHref = decodeHtml(href).trim();
+      if (isLocalMediaPath(cleanHref)) return renderVaultEmbed(vault, cleanHref);
+      return '<a href="' + escapeHtml(cleanHref) + '" target="_blank" rel="noreferrer">' + label + '</a>';
+    }
+
+    function isLocalMediaPath(value) {
+      return /^raw\\/assets\\/user-notes\\//.test(String(value || ""));
     }
 
     function renderVaultEmbed(vault, file) {
