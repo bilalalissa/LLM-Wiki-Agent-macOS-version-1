@@ -202,6 +202,14 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 
 Useful chat answers can be saved back into `raw/input/` and ingested like any other source.
 
+Adding notes from Chat or Local results:
+
+- Select text in a result box and click `Add note`.
+- Paste plain text or markdown directly into the note box.
+- Use `Add link` to insert a markdown link.
+- Use `Add media` to attach an image, PDF, audio file, or video file. The app saves the file under `raw/assets/user-notes/` in the related vault and inserts an Obsidian embed/link into the note.
+- Saved notes are written into the related markdown file under `## User Notes`, so they remain visible in Obsidian and in the app.
+
 Processed source language:
 
 - The agent detects each source's primary language.

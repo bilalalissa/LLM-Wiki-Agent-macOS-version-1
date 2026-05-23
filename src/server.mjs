@@ -10,7 +10,7 @@ import { saveChatAsRawSource } from "./chat-source.mjs";
 import { listArchiveHistory, listFileHistory } from "./history.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
-import { addNote, deleteNote, listNotes, updateNote } from "./notes.mjs";
+import { addNote, deleteNote, listNotes, saveNoteMedia, updateNote } from "./notes.mjs";
 import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
@@ -229,6 +229,19 @@ const server = http.createServer(async (request, response) => {
       const note = addNote(config, JSON.parse(body || "{}"));
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ note }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/notes/media") {
+    try {
+      const body = await readBody(request);
+      const result = saveNoteMedia(config, JSON.parse(body || "{}"));
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(result));
     } catch (error) {
       response.writeHead(500, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: error.message }));
@@ -476,7 +489,11 @@ function renderHtml() {
     .status-dot.red { background: #dc2626; }
     .status-dot.grey { background: #9ca3af; }
     .selection-toolbar { position: fixed; display: none; z-index: 20; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
-    .note-editor { display: none; position: fixed; z-index: 21; width: 320px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; }
+    .note-editor { display: none; position: fixed; z-index: 21; width: min(460px, calc(100vw - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; }
+    .note-tools { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 6px; align-items: center; margin-top: 8px; }
+    .note-tools input { min-width: 0; }
+    .note-media-label { display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; cursor: pointer; }
+    .note-media-label input { display: none; }
     .note-actions, .note-row-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
     .notes-list { margin-top: 18px; }
     .note-card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
@@ -704,6 +721,13 @@ function renderHtml() {
   <div id="note-editor" class="note-editor">
     <div class="muted">Note for selected text</div>
     <textarea id="note-text" placeholder="Write a note"></textarea>
+    <div class="note-tools">
+      <input id="note-link-text" autocomplete="off" placeholder="Link text">
+      <input id="note-link-url" autocomplete="off" placeholder="https://...">
+      <button id="note-insert-link" class="secondary" type="button">Add link</button>
+      <label class="secondary note-media-label">Add media<input id="note-media" type="file" accept="image/*,.pdf,audio/*,video/*"></label>
+    </div>
+    <div id="note-media-feedback" class="copy-feedback"></div>
     <div class="note-actions">
       <button id="note-cancel" class="secondary" type="button">Cancel</button>
       <button id="note-save" class="primary" type="button">Save</button>
@@ -775,6 +799,11 @@ function renderHtml() {
     const selectionToolbar = document.querySelector("#selection-toolbar");
     const noteEditor = document.querySelector("#note-editor");
     const noteText = document.querySelector("#note-text");
+    const noteLinkText = document.querySelector("#note-link-text");
+    const noteLinkUrl = document.querySelector("#note-link-url");
+    const noteInsertLink = document.querySelector("#note-insert-link");
+    const noteMedia = document.querySelector("#note-media");
+    const noteMediaFeedback = document.querySelector("#note-media-feedback");
     const notesList = document.querySelector("#notes-list");
     const refreshNotes = document.querySelector("#refresh-notes");
     const noteDisplayMode = document.querySelector("#note-display-mode");
@@ -1650,6 +1679,10 @@ function renderHtml() {
       noteEditor.style.left = Math.max(12, rect.left) + "px";
       noteEditor.style.top = Math.max(12, rect.bottom + 8) + "px";
       noteText.value = "";
+      noteLinkText.value = "";
+      noteLinkUrl.value = "";
+      noteMedia.value = "";
+      noteMediaFeedback.textContent = "";
       noteEditor.style.display = "block";
       noteText.focus();
     });
@@ -1657,6 +1690,8 @@ function renderHtml() {
       noteEditor.style.display = "none";
     });
     document.querySelector("#note-save").addEventListener("click", saveSelectedNote);
+    noteInsertLink.addEventListener("click", insertNoteLink);
+    noteMedia.addEventListener("change", uploadNoteMedia);
 
     function selectionInfo(selection, box) {
       const text = selection.toString().trim();
@@ -1721,6 +1756,69 @@ function renderHtml() {
       notesCache = [data.note, ...notesCache.filter((note) => note.id !== data.note.id)];
       refreshResultAnnotations();
       renderNotesList();
+    }
+
+    function insertNoteLink() {
+      const url = noteLinkUrl.value.trim();
+      if (!url) {
+        noteMediaFeedback.textContent = "Add a URL first";
+        setTimeout(() => { noteMediaFeedback.textContent = ""; }, 1800);
+        return;
+      }
+      const label = noteLinkText.value.trim() || url;
+      insertAtCursor(noteText, "[" + label.replace(/\\]/g, "\\\\]") + "](" + url.replace(/\\)/g, "%29") + ")");
+      noteLinkText.value = "";
+      noteLinkUrl.value = "";
+      noteText.focus();
+    }
+
+    async function uploadNoteMedia() {
+      const file = noteMedia.files && noteMedia.files[0];
+      if (!file || !selectedInfo) return;
+      noteMediaFeedback.textContent = "Adding media...";
+      noteMedia.disabled = true;
+      try {
+        const data = await readFileAsDataURL(file);
+        const response = await fetch("/api/notes/media", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            vault: selectedInfo.vault,
+            path: selectedInfo.path,
+            filename: file.name,
+            data
+          })
+        });
+        const result = await response.json();
+        if (result.error) throw new Error(result.error);
+        insertAtCursor(noteText, (noteText.value.trim() ? "\\n" : "") + result.markdown + "\\n");
+        noteMediaFeedback.textContent = "Media added";
+        noteText.focus();
+      } catch (error) {
+        noteMediaFeedback.textContent = error.message;
+      } finally {
+        noteMedia.disabled = false;
+        noteMedia.value = "";
+        setTimeout(() => { noteMediaFeedback.textContent = ""; }, 2400);
+      }
+    }
+
+    function insertAtCursor(textarea, value) {
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? textarea.value.length;
+      textarea.value = textarea.value.slice(0, start) + value + textarea.value.slice(end);
+      const next = start + value.length;
+      textarea.selectionStart = next;
+      textarea.selectionEnd = next;
+    }
+
+    function readFileAsDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("Could not read media file."));
+        reader.readAsDataURL(file);
+      });
     }
 
     async function loadNotes(options = {}) {
