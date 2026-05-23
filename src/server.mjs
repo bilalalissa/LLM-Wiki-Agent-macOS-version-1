@@ -1747,6 +1747,7 @@ function renderHtml() {
     document.querySelector("#note-save").addEventListener("click", saveSelectedNote);
     noteInsertLink.addEventListener("click", insertNoteLink);
     noteMedia.addEventListener("change", uploadNoteMedia);
+    noteText.addEventListener("paste", pasteNoteMedia);
 
     function selectionInfo(selection, box) {
       const text = selection.toString().trim();
@@ -1830,6 +1831,29 @@ function renderHtml() {
     async function uploadNoteMedia() {
       const file = noteMedia.files && noteMedia.files[0];
       if (!file || !selectedInfo) return;
+      await uploadNoteMediaFile(file);
+      noteMedia.value = "";
+    }
+
+    async function pasteNoteMedia(event) {
+      const files = Array.from(event.clipboardData?.files || []);
+      const itemFiles = Array.from(event.clipboardData?.items || [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter(Boolean);
+      const file = [...files, ...itemFiles].find((item) =>
+        /^(image|audio|video)\\//.test(item.type) || item.type === "application/pdf"
+      );
+      if (!file) return;
+      event.preventDefault();
+      const ext = extensionFromMime(file.type);
+      const name = file.name && file.name !== "image.png" ? file.name : "clipboard-media" + ext;
+      const namedFile = file.name === name ? file : new File([file], name, { type: file.type || "application/octet-stream" });
+      await uploadNoteMediaFile(namedFile, "Pasted media added");
+    }
+
+    async function uploadNoteMediaFile(file, successMessage = "Media added") {
+      if (!file || !selectedInfo) return;
       noteMediaFeedback.textContent = "Adding media...";
       noteMedia.disabled = true;
       try {
@@ -1847,15 +1871,31 @@ function renderHtml() {
         const result = await response.json();
         if (result.error) throw new Error(result.error);
         insertAtCursor(noteText, (noteText.value.trim() ? "\\n" : "") + result.markdown + "\\n");
-        noteMediaFeedback.textContent = "Media added";
+        noteMediaFeedback.textContent = successMessage;
         noteText.focus();
       } catch (error) {
         noteMediaFeedback.textContent = error.message;
       } finally {
         noteMedia.disabled = false;
-        noteMedia.value = "";
         setTimeout(() => { noteMediaFeedback.textContent = ""; }, 2400);
       }
+    }
+
+    function extensionFromMime(type) {
+      const map = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+        "application/pdf": ".pdf",
+        "audio/mpeg": ".mp3",
+        "audio/wav": ".wav",
+        "audio/mp4": ".m4a",
+        "video/mp4": ".mp4",
+        "video/quicktime": ".mov"
+      };
+      return map[type] || ".bin";
     }
 
     function insertAtCursor(textarea, value) {

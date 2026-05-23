@@ -208,6 +208,7 @@ Adding notes from Chat or Local results:
 - Paste plain text or markdown directly into the note box.
 - Use `Add link` to insert a markdown link.
 - Use `Add media` to attach an image, PDF, audio file, or video file. The app saves the file under `raw/assets/user-notes/` in the related vault and inserts an Obsidian embed/link into the note.
+- Paste a copied image directly into the note box with `Cmd+V`; the app saves it as note media and inserts the Obsidian embed.
 - Saved notes are written into the related markdown file under `## User Notes`, so they remain visible in Obsidian and in the app.
 
 Processed source language:
