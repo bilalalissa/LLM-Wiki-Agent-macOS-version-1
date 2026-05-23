@@ -1,5 +1,6 @@
 import http from "node:http";
 import fs from "node:fs";
+import path from "node:path";
 import { execFile } from "node:child_process";
 import { deleteArchivedItems } from "./archive-delete.mjs";
 import { restoreArchivedItems } from "./archive-restore.mjs";
@@ -249,6 +250,20 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/vault-media") {
+    try {
+      const vault = url.searchParams.get("vault") || "";
+      const file = url.searchParams.get("file") || "";
+      const media = resolveVaultMedia(config, vault, file);
+      response.writeHead(200, { "content-type": media.contentType });
+      fs.createReadStream(media.file).pipe(response);
+    } catch (error) {
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end(error.message);
+    }
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/notes/update") {
     try {
       const body = await readBody(request);
@@ -352,6 +367,41 @@ function openConfigFile(file) {
   return new Promise((resolve, reject) => {
     execFile("open", ["-a", "TextEdit", file], (error) => error ? reject(error) : resolve(""));
   });
+}
+
+function resolveVaultMedia(config, vault, file) {
+  const vaultPath = listVaults(config.vaultsRoot).find((item) => vaultName(item) === vault);
+  if (!vaultPath) throw new Error("Unknown vault.");
+  const normalized = String(file || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized || normalized.includes("\0") || normalized.split("/").includes("..")) {
+    throw new Error("Invalid media path.");
+  }
+  const full = path.resolve(vaultPath, normalized);
+  const root = path.resolve(vaultPath);
+  if (full !== root && !full.startsWith(root + path.sep)) throw new Error("Invalid media path.");
+  if (!fs.existsSync(full)) throw new Error("Media file not found.");
+  return { file: full, contentType: mediaContentType(full) };
+}
+
+function mediaContentType(file) {
+  const ext = path.extname(file).toLowerCase();
+  const types = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".aiff": "audio/aiff",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".m4v": "video/x-m4v"
+  };
+  return types[ext] || "application/octet-stream";
 }
 
 function runOsascript(lines) {
@@ -461,8 +511,13 @@ function renderHtml() {
     .note-indicator { position: relative; }
     body[data-note-display="tooltip"] .note-indicator { text-decoration: underline dotted; }
     body[data-note-display="box"] .note-indicator { cursor: help; }
-    .note-indicator::after { content: attr(data-note); display: none; position: absolute; left: 0; top: 130%; z-index: 30; min-width: 220px; max-width: 320px; white-space: normal; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; font-size: 13px; line-height: 1.35; }
-    body[data-note-display="box"] .note-indicator:hover::after { display: block; }
+    .note-popover { display: none; position: absolute; left: 0; top: 130%; z-index: 30; min-width: 240px; max-width: min(360px, calc(100vw - 48px)); max-height: 420px; overflow: auto; white-space: normal; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; font-size: 13px; line-height: 1.35; }
+    body[data-note-display="box"] .note-indicator:hover .note-popover,
+    body[data-note-display="tooltip"] .note-indicator.has-media:hover .note-popover { display: block; }
+    .note-popover p { margin: 0 0 8px; }
+    .note-popover p:last-child { margin-bottom: 0; }
+    .note-popover img, .note-popover video, .note-popover iframe { display: block; max-width: 100%; max-height: 240px; border-radius: 4px; border: 1px solid var(--line); background: var(--soft); margin: 8px 0; }
+    .note-popover audio { display: block; width: 100%; margin: 8px 0; }
     table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
     th { background: var(--soft); font-weight: 700; }
@@ -1948,15 +2003,76 @@ function renderHtml() {
       }
       const indicator = document.createElement("span");
       indicator.className = "note-indicator";
+      if (noteHasMedia(note.note)) indicator.classList.add("has-media");
       indicator.dataset.noteId = note.id;
-      indicator.dataset.note = note.note;
-      if (document.body.dataset.noteDisplay === "tooltip") indicator.title = note.note;
+      if (document.body.dataset.noteDisplay === "tooltip" && !noteHasMedia(note.note)) indicator.title = note.note;
       indicator.textContent = "note";
+      const popover = document.createElement("span");
+      popover.className = "note-popover";
+      popover.innerHTML = renderNotePopover(note);
+      popover.addEventListener("click", (event) => event.stopPropagation());
+      indicator.appendChild(popover);
       indicator.addEventListener("click", (event) => {
         event.stopPropagation();
         showNoteCard(note.id);
       });
       anchor.after(indicator);
+    }
+
+    function noteHasMedia(note) {
+      return /!\\[\\[[^\\]]+\\]\\]/.test(String(note || ""));
+    }
+
+    function renderNotePopover(note) {
+      const vault = note.vault || "";
+      return String(note.note || "")
+        .split(/\\r?\\n/)
+        .map((line) => renderNoteLine(line, vault))
+        .join("");
+    }
+
+    function renderNoteLine(line, vault) {
+      const text = String(line || "");
+      if (!text.trim()) return "";
+      const embedOnly = text.trim().match(/^!\\[\\[([^\\]]+)\\]\\]$/);
+      if (embedOnly) return renderVaultEmbed(vault, embedOnly[1]);
+      return "<p>" + inlineNoteMarkdown(text, vault) + "</p>";
+    }
+
+    function inlineNoteMarkdown(value, vault) {
+      return escapeHtml(value)
+        .replace(/!\\[\\[([^\\]]+)\\]\\]/g, (_match, file) => renderVaultEmbed(vault, decodeHtml(file)))
+        .replace(/\\[\\[([^|\\]]+)\\|([^\\]]+)\\]\\]/g, "$2")
+        .replace(/\\[\\[([^\\]]+)\\]\\]/g, "$1")
+        .replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>")
+        .replace(/\\*([^*]+)\\*/g, "<em>$1</em>")
+        .replace(/\\x60([^\\x60]+)\\x60/g, "<code>$1</code>")
+        .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    }
+
+    function renderVaultEmbed(vault, file) {
+      const clean = String(file || "").split("|")[0].trim();
+      const src = "/api/vault-media?vault=" + encodeURIComponent(vault) + "&file=" + encodeURIComponent(clean);
+      const ext = clean.split(".").pop().toLowerCase();
+      if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
+        return '<img src="' + src + '" alt="' + escapeHtml(clean) + '">';
+      }
+      if (["mp3", "wav", "m4a", "aiff"].includes(ext)) {
+        return '<audio controls src="' + src + '"></audio>';
+      }
+      if (["mp4", "mov", "m4v"].includes(ext)) {
+        return '<video controls src="' + src + '"></video>';
+      }
+      if (ext === "pdf") {
+        return '<iframe src="' + src + '" title="' + escapeHtml(clean) + '"></iframe>';
+      }
+      return '<a href="' + src + '" target="_blank" rel="noreferrer">' + escapeHtml(clean) + '</a>';
+    }
+
+    function decodeHtml(value) {
+      const textarea = document.createElement("textarea");
+      textarea.innerHTML = value;
+      return textarea.value;
     }
 
     function showNoteCard(id) {
