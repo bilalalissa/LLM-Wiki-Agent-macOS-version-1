@@ -432,6 +432,12 @@ function renderHtml() {
     button.primary { font: inherit; padding: 12px 16px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
     button.secondary { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
     button:disabled { opacity: 0.55; cursor: default; }
+    .table-controls { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, auto)); gap: 8px; align-items: center; margin: 12px 0; }
+    .table-controls input, .table-controls select { min-width: 0; width: 100%; box-sizing: border-box; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable::after { content: " ↕"; color: var(--muted); font-weight: 400; }
+    th.sortable.sort-asc::after { content: " ↑"; color: var(--accent); }
+    th.sortable.sort-desc::after { content: " ↓"; color: var(--accent); }
     .local-section-toggles { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
     .local-section-toggles label { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--panel); font-size: 13px; }
     .local-section-toggles input { flex: 0 0 auto; }
@@ -576,16 +582,22 @@ function renderHtml() {
         <span id="merge-sources-feedback" class="copy-feedback"></span>
         <span id="delete-sources-feedback" class="copy-feedback"></span>
       </div>
+      <div class="table-controls">
+        <input id="files-filter" autocomplete="off" placeholder="Filter files">
+        <select id="files-vault-filter"><option value="">All vaults</option></select>
+        <select id="files-status-filter"><option value="">All statuses</option></select>
+        <button id="files-clear-filter" class="secondary" type="button">Clear</button>
+      </div>
       <table>
         <thead>
           <tr>
             <th>Select</th>
-            <th>#</th>
-            <th>Vault</th>
-            <th>File</th>
-            <th>Received</th>
-            <th>Processed</th>
-            <th>Status</th>
+            <th class="sortable" data-table="files" data-sort="number">#</th>
+            <th class="sortable" data-table="files" data-sort="vault">Vault</th>
+            <th class="sortable" data-table="files" data-sort="file">File</th>
+            <th class="sortable" data-table="files" data-sort="receivedAtMs">Received</th>
+            <th class="sortable" data-table="files" data-sort="processedAtMs">Processed</th>
+            <th class="sortable" data-table="files" data-sort="status">Status</th>
           </tr>
         </thead>
         <tbody id="files-body">
@@ -601,16 +613,22 @@ function renderHtml() {
         <span id="restore-archives-feedback" class="copy-feedback"></span>
         <span id="delete-archives-feedback" class="copy-feedback"></span>
       </div>
+      <div class="table-controls">
+        <input id="archives-filter" autocomplete="off" placeholder="Filter archives">
+        <select id="archives-vault-filter"><option value="">All vaults</option></select>
+        <select id="archives-kind-filter"><option value="">All types</option></select>
+        <button id="archives-clear-filter" class="secondary" type="button">Clear</button>
+      </div>
       <table>
         <thead>
           <tr>
             <th>Select</th>
-            <th>#</th>
-            <th>Vault</th>
-            <th>Type</th>
-            <th>Relation</th>
-            <th>Path</th>
-            <th>Archived</th>
+            <th class="sortable" data-table="archives" data-sort="number">#</th>
+            <th class="sortable" data-table="archives" data-sort="vault">Vault</th>
+            <th class="sortable" data-table="archives" data-sort="kind">Type</th>
+            <th class="sortable" data-table="archives" data-sort="relation">Relation</th>
+            <th class="sortable" data-table="archives" data-sort="file">Path</th>
+            <th class="sortable" data-table="archives" data-sort="archivedAtMs">Archived</th>
           </tr>
         </thead>
         <tbody id="archives-body">
@@ -620,16 +638,22 @@ function renderHtml() {
     </section>
     <section id="topics-panel" class="panel">
       <p class="muted">All available wiki topics and insights with their vault paths.</p>
+      <div class="table-controls">
+        <input id="topics-filter" autocomplete="off" placeholder="Filter topics">
+        <select id="topics-vault-filter"><option value="">All vaults</option></select>
+        <select id="topics-type-filter"><option value="">All types</option></select>
+        <button id="topics-clear-filter" class="secondary" type="button">Clear</button>
+      </div>
       <table>
         <thead>
           <tr>
-            <th>#</th>
-            <th>Topic</th>
-            <th>Type</th>
-            <th>Vault</th>
-            <th>Path</th>
-            <th>Tags</th>
-            <th>Updated</th>
+            <th class="sortable" data-table="topics" data-sort="number">#</th>
+            <th class="sortable" data-table="topics" data-sort="title">Topic</th>
+            <th class="sortable" data-table="topics" data-sort="type">Type</th>
+            <th class="sortable" data-table="topics" data-sort="vault">Vault</th>
+            <th class="sortable" data-table="topics" data-sort="path">Path</th>
+            <th class="sortable" data-table="topics" data-sort="tagsText">Tags</th>
+            <th class="sortable" data-table="topics" data-sort="updated">Updated</th>
           </tr>
         </thead>
         <tbody id="topics-body">
@@ -721,7 +745,15 @@ function renderHtml() {
     const localCopyFeedback = document.querySelector("#local-copy-feedback");
     const tabs = document.querySelectorAll(".tab");
     const filesBody = document.querySelector("#files-body");
+    const filesFilter = document.querySelector("#files-filter");
+    const filesVaultFilter = document.querySelector("#files-vault-filter");
+    const filesStatusFilter = document.querySelector("#files-status-filter");
+    const filesClearFilter = document.querySelector("#files-clear-filter");
     const archivesBody = document.querySelector("#archives-body");
+    const archivesFilter = document.querySelector("#archives-filter");
+    const archivesVaultFilter = document.querySelector("#archives-vault-filter");
+    const archivesKindFilter = document.querySelector("#archives-kind-filter");
+    const archivesClearFilter = document.querySelector("#archives-clear-filter");
     const renameSourceButton = document.querySelector("#rename-source");
     const renameSourceFeedback = document.querySelector("#rename-source-feedback");
     const mergeSourcesButton = document.querySelector("#merge-sources");
@@ -733,6 +765,10 @@ function renderHtml() {
     const restoreArchivesButton = document.querySelector("#restore-archives");
     const restoreArchivesFeedback = document.querySelector("#restore-archives-feedback");
     const topicsBody = document.querySelector("#topics-body");
+    const topicsFilter = document.querySelector("#topics-filter");
+    const topicsVaultFilter = document.querySelector("#topics-vault-filter");
+    const topicsTypeFilter = document.querySelector("#topics-type-filter");
+    const topicsClearFilter = document.querySelector("#topics-clear-filter");
     const providerStatusBox = document.querySelector("#provider-status-box");
     const refreshProvider = document.querySelector("#refresh-provider");
     const providerTabDot = document.querySelector("#provider-tab-dot");
@@ -761,6 +797,14 @@ function renderHtml() {
     let selectedInfo = null;
     let notesCache = [];
     let sideTopicsCache = [];
+    let filesCache = [];
+    let archivesCache = [];
+    let topicsCache = [];
+    const tableSort = {
+      files: { key: "processedAtMs", dir: "desc" },
+      archives: { key: "archivedAtMs", dir: "desc" },
+      topics: { key: "title", dir: "asc" }
+    };
 
     const savedTheme = localStorage.getItem("llm-wiki-theme") || "light";
     document.body.dataset.theme = savedTheme;
@@ -878,6 +922,44 @@ function renderHtml() {
     chooseConfigFile.addEventListener("click", chooseConfigPathValue);
     openConfigFile.addEventListener("click", openConfigPathValue);
     refreshNotes.addEventListener("click", loadNotes);
+    filesFilter.addEventListener("input", renderFilesTable);
+    filesVaultFilter.addEventListener("change", renderFilesTable);
+    filesStatusFilter.addEventListener("change", renderFilesTable);
+    filesClearFilter.addEventListener("click", () => {
+      filesFilter.value = "";
+      filesVaultFilter.value = "";
+      filesStatusFilter.value = "";
+      renderFilesTable();
+    });
+    archivesFilter.addEventListener("input", renderArchivesTable);
+    archivesVaultFilter.addEventListener("change", renderArchivesTable);
+    archivesKindFilter.addEventListener("change", renderArchivesTable);
+    archivesClearFilter.addEventListener("click", () => {
+      archivesFilter.value = "";
+      archivesVaultFilter.value = "";
+      archivesKindFilter.value = "";
+      renderArchivesTable();
+    });
+    topicsFilter.addEventListener("input", renderTopicsTable);
+    topicsVaultFilter.addEventListener("change", renderTopicsTable);
+    topicsTypeFilter.addEventListener("change", renderTopicsTable);
+    topicsClearFilter.addEventListener("click", () => {
+      topicsFilter.value = "";
+      topicsVaultFilter.value = "";
+      topicsTypeFilter.value = "";
+      renderTopicsTable();
+    });
+    document.querySelectorAll("th.sortable").forEach((header) => {
+      header.addEventListener("click", () => {
+        const table = header.dataset.table;
+        const key = header.dataset.sort;
+        tableSort[table].dir = tableSort[table].key === key && tableSort[table].dir === "asc" ? "desc" : "asc";
+        tableSort[table].key = key;
+        if (table === "files") renderFilesTable();
+        if (table === "archives") renderArchivesTable();
+        if (table === "topics") renderTopicsTable();
+      });
+    });
 
     restoreLocalSectionToggles();
 
@@ -947,22 +1029,37 @@ function renderHtml() {
       try {
         const response = await fetch("/api/files");
         const data = await response.json();
-        if (!data.files || !data.files.length) {
-          filesBody.innerHTML = '<tr><td colspan="7" class="muted">No processed files yet.</td></tr>';
-          return;
-        }
-        filesBody.innerHTML = data.files.map((file) => '<tr>' +
-          '<td><input class="source-select" type="checkbox" data-vault="' + escapeHtml(file.vault) + '" data-file="' + escapeHtml(file.file) + '" data-source-page="' + escapeHtml(file.sourcePage || "") + '"></td>' +
-          '<td>' + escapeHtml(file.number) + '</td>' +
-          '<td>' + escapeHtml(file.vault) + '</td>' +
-          '<td><div class="path">' + escapeHtml(file.file) + '</div><div class="muted path">' + escapeHtml(file.sourcePage || "") + '</div></td>' +
-          '<td>' + escapeHtml(file.receivedAt) + '</td>' +
-          '<td>' + escapeHtml(file.processedAt) + '</td>' +
-          '<td>' + escapeHtml(file.status) + '</td>' +
-        '</tr>').join("");
+        filesCache = data.files || [];
+        populateSelect(filesVaultFilter, filesCache.map((file) => file.vault), "All vaults");
+        populateSelect(filesStatusFilter, filesCache.map((file) => file.status), "All statuses");
+        renderFilesTable();
       } catch (error) {
         filesBody.innerHTML = '<tr><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
       }
+    }
+
+    function renderFilesTable() {
+      updateSortHeaders("files");
+      const files = sortRows(filterRows(filesCache, filesFilter.value, ["number", "vault", "file", "sourcePage", "receivedAt", "processedAt", "status"])
+        .filter((file) => !filesVaultFilter.value || file.vault === filesVaultFilter.value)
+        .filter((file) => !filesStatusFilter.value || file.status === filesStatusFilter.value), "files");
+      if (!filesCache.length) {
+        filesBody.innerHTML = '<tr><td colspan="7" class="muted">No processed files yet.</td></tr>';
+        return;
+      }
+      if (!files.length) {
+        filesBody.innerHTML = '<tr><td colspan="7" class="muted">No files match the current filters.</td></tr>';
+        return;
+      }
+      filesBody.innerHTML = files.map((file) => '<tr>' +
+        '<td><input class="source-select" type="checkbox" data-vault="' + escapeHtml(file.vault) + '" data-file="' + escapeHtml(file.file) + '" data-source-page="' + escapeHtml(file.sourcePage || "") + '"></td>' +
+        '<td>' + escapeHtml(file.number) + '</td>' +
+        '<td>' + escapeHtml(file.vault) + '</td>' +
+        '<td><div class="path">' + escapeHtml(file.file) + '</div><div class="muted path">' + escapeHtml(file.sourcePage || "") + '</div></td>' +
+        '<td>' + escapeHtml(file.receivedAt) + '</td>' +
+        '<td>' + escapeHtml(file.processedAt) + '</td>' +
+        '<td>' + escapeHtml(file.status) + '</td>' +
+      '</tr>').join("");
     }
 
     async function deleteSelectedSources() {
@@ -1094,28 +1191,81 @@ function renderHtml() {
       return base.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") || "Renamed source";
     }
 
+    function populateSelect(select, values, label) {
+      const current = select.value;
+      const options = [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+      select.innerHTML = '<option value="">' + escapeHtml(label) + '</option>' +
+        options.map((value) => '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '</option>').join("");
+      if (options.includes(current)) select.value = current;
+    }
+
+    function filterRows(rows, query, keys) {
+      const text = String(query || "").trim().toLowerCase();
+      if (!text) return rows.slice();
+      return rows.filter((row) => keys.some((key) => String(row[key] || "").toLowerCase().includes(text)));
+    }
+
+    function sortRows(rows, table) {
+      const { key, dir } = tableSort[table];
+      const direction = dir === "asc" ? 1 : -1;
+      return rows.slice().sort((a, b) => compareValues(a[key], b[key]) * direction);
+    }
+
+    function compareValues(a, b) {
+      const left = a ?? "";
+      const right = b ?? "";
+      if (typeof left === "number" && typeof right === "number") return left - right;
+      const leftNumber = Number(left);
+      const rightNumber = Number(right);
+      if (!Number.isNaN(leftNumber) && !Number.isNaN(rightNumber) && String(left).trim() !== "" && String(right).trim() !== "") {
+        return leftNumber - rightNumber;
+      }
+      return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
+    }
+
+    function updateSortHeaders(table) {
+      document.querySelectorAll('th.sortable[data-table="' + table + '"]').forEach((header) => {
+        header.classList.toggle("sort-asc", header.dataset.sort === tableSort[table].key && tableSort[table].dir === "asc");
+        header.classList.toggle("sort-desc", header.dataset.sort === tableSort[table].key && tableSort[table].dir === "desc");
+      });
+    }
+
     async function loadArchives() {
       archivesBody.innerHTML = '<tr><td colspan="7" class="muted">Loading...</td></tr>';
       try {
         const response = await fetch("/api/archives");
         const data = await response.json();
-        const archives = data.archives || [];
-        if (!archives.length) {
-          archivesBody.innerHTML = '<tr><td colspan="7" class="muted">No archived sources yet.</td></tr>';
-          return;
-        }
-        archivesBody.innerHTML = archives.map((item) => '<tr>' +
-          '<td><input class="archive-select" type="checkbox" data-vault="' + escapeHtml(item.vault) + '" data-file="' + escapeHtml(item.file) + '" data-relation="' + escapeHtml(item.relation || "") + '"></td>' +
-          '<td>' + escapeHtml(item.number) + '</td>' +
-          '<td>' + escapeHtml(item.vault) + '</td>' +
-          '<td>' + escapeHtml(item.kind) + '</td>' +
-          '<td>' + escapeHtml(item.relation || "Archive-only item") + '</td>' +
-          '<td class="path">' + escapeHtml(item.file) + '</td>' +
-          '<td>' + escapeHtml(item.archivedAt) + '</td>' +
-        '</tr>').join("");
+        archivesCache = data.archives || [];
+        populateSelect(archivesVaultFilter, archivesCache.map((item) => item.vault), "All vaults");
+        populateSelect(archivesKindFilter, archivesCache.map((item) => item.kind), "All types");
+        renderArchivesTable();
       } catch (error) {
         archivesBody.innerHTML = '<tr><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
       }
+    }
+
+    function renderArchivesTable() {
+      updateSortHeaders("archives");
+      const archives = sortRows(filterRows(archivesCache, archivesFilter.value, ["number", "vault", "kind", "relation", "file", "archivedAt"])
+        .filter((item) => !archivesVaultFilter.value || item.vault === archivesVaultFilter.value)
+        .filter((item) => !archivesKindFilter.value || item.kind === archivesKindFilter.value), "archives");
+      if (!archivesCache.length) {
+        archivesBody.innerHTML = '<tr><td colspan="7" class="muted">No archived sources yet.</td></tr>';
+        return;
+      }
+      if (!archives.length) {
+        archivesBody.innerHTML = '<tr><td colspan="7" class="muted">No archived items match the current filters.</td></tr>';
+        return;
+      }
+      archivesBody.innerHTML = archives.map((item) => '<tr>' +
+        '<td><input class="archive-select" type="checkbox" data-vault="' + escapeHtml(item.vault) + '" data-file="' + escapeHtml(item.file) + '" data-relation="' + escapeHtml(item.relation || "") + '"></td>' +
+        '<td>' + escapeHtml(item.number) + '</td>' +
+        '<td>' + escapeHtml(item.vault) + '</td>' +
+        '<td>' + escapeHtml(item.kind) + '</td>' +
+        '<td>' + escapeHtml(item.relation || "Archive-only item") + '</td>' +
+        '<td class="path">' + escapeHtml(item.file) + '</td>' +
+        '<td>' + escapeHtml(item.archivedAt) + '</td>' +
+      '</tr>').join("");
     }
 
     async function restoreSelectedArchives() {
@@ -1191,23 +1341,37 @@ function renderHtml() {
       try {
         const response = await fetch("/api/topics");
         const data = await response.json();
-        const topics = data.topics || [];
-        if (!topics.length) {
-          topicsBody.innerHTML = '<tr><td colspan="7" class="muted">No topics yet.</td></tr>';
-          return;
-        }
-        topicsBody.innerHTML = topics.map((topic, index) => '<tr>' +
-          '<td>' + (index + 1) + '</td>' +
-          '<td>' + escapeHtml(topic.title) + '<div class="muted">' + escapeHtml(topic.summary || "") + '</div></td>' +
-          '<td>' + escapeHtml(topic.type) + '</td>' +
-          '<td>' + escapeHtml(topic.vault) + '</td>' +
-          '<td class="path">' + escapeHtml(topic.path) + '</td>' +
-          '<td>' + escapeHtml((topic.tags || []).join(", ")) + '</td>' +
-          '<td>' + escapeHtml(topic.updated) + '</td>' +
-        '</tr>').join("");
+        topicsCache = (data.topics || []).map((topic, index) => ({ ...topic, number: index + 1, tagsText: (topic.tags || []).join(", ") }));
+        populateSelect(topicsVaultFilter, topicsCache.map((topic) => topic.vault), "All vaults");
+        populateSelect(topicsTypeFilter, topicsCache.map((topic) => topic.type), "All types");
+        renderTopicsTable();
       } catch (error) {
         topicsBody.innerHTML = '<tr><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
       }
+    }
+
+    function renderTopicsTable() {
+      updateSortHeaders("topics");
+      const topics = sortRows(filterRows(topicsCache, topicsFilter.value, ["number", "title", "summary", "type", "vault", "path", "tagsText", "updated"])
+        .filter((topic) => !topicsVaultFilter.value || topic.vault === topicsVaultFilter.value)
+        .filter((topic) => !topicsTypeFilter.value || topic.type === topicsTypeFilter.value), "topics");
+      if (!topicsCache.length) {
+        topicsBody.innerHTML = '<tr><td colspan="7" class="muted">No topics yet.</td></tr>';
+        return;
+      }
+      if (!topics.length) {
+        topicsBody.innerHTML = '<tr><td colspan="7" class="muted">No topics match the current filters.</td></tr>';
+        return;
+      }
+      topicsBody.innerHTML = topics.map((topic, index) => '<tr>' +
+        '<td>' + escapeHtml(topic.number || index + 1) + '</td>' +
+        '<td>' + escapeHtml(topic.title) + '<div class="muted">' + escapeHtml(topic.summary || "") + '</div></td>' +
+        '<td>' + escapeHtml(topic.type) + '</td>' +
+        '<td>' + escapeHtml(topic.vault) + '</td>' +
+        '<td class="path">' + escapeHtml(topic.path) + '</td>' +
+        '<td>' + escapeHtml(topic.tagsText || "") + '</td>' +
+        '<td>' + escapeHtml(topic.updated) + '</td>' +
+      '</tr>').join("");
     }
 
     async function loadProviderStatus() {

@@ -215,6 +215,12 @@ The Files tab can rename processed sources:
 - Enter the new title.
 - The app renames the raw source file and source page when present, updates `source_path`, updates wiki links/references, refreshes the index mapping, and appends a maintenance log entry.
 
+Files, Archive, and Topics tables support local filtering and sorting:
+
+- Use the search box to filter visible rows.
+- Use dropdowns to filter by vault, status, type, or archive kind where available.
+- Click sortable column headers to toggle ascending or descending order.
+
 The Files tab can merge processed sources:
 
 - Select two or more sources from the same vault.
