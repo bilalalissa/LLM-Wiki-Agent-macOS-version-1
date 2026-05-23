@@ -43,15 +43,16 @@ function findMatches(terms, config, options) {
     for (const file of listWikiFiles(vaultPath)) {
       const relativePath = path.relative(vaultPath, file);
       if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
-      const text = filterStructuralSections(stripUserNotes(fs.readFileSync(file, "utf8")), options);
-      const score = scoreText(`${relativePath}\n${text}`, terms);
+      const fullText = stripUserNotes(fs.readFileSync(file, "utf8"));
+      const displayText = filterStructuralSections(fullText, options);
+      const score = scoreText(`${relativePath}\n${fullText}`, terms);
       if (score <= 0) continue;
       matches.push({
         vault: vaultName(vaultPath),
         relativePath,
-        title: extractTitle(text, relativePath),
+        title: extractTitle(fullText, relativePath),
         score,
-        snippets: extractSnippets(text, terms)
+        snippets: extractSnippets(displayText, terms, fullText)
       });
     }
   }
@@ -68,7 +69,7 @@ function scoreText(text, terms) {
   return score;
 }
 
-function extractSnippets(markdown, terms) {
+function extractSnippets(markdown, terms, fallbackMarkdown = markdown) {
   const sections = markdown
     .replace(/^---[\s\S]*?---\s*/m, "")
     .split(/\n(?=##?\s+)/)
@@ -85,7 +86,15 @@ function extractSnippets(markdown, terms) {
   if (ranked.length) return ranked;
 
   const summary = sections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
-  return [firstUsefulSentence(summary || clean(markdown))].filter(Boolean);
+  if (summary) return [firstUsefulSentence(summary)].filter(Boolean);
+
+  const fallbackSections = fallbackMarkdown
+    .replace(/^---[\s\S]*?---\s*/m, "")
+    .split(/\n(?=##?\s+)/)
+    .map((section) => clean(section))
+    .filter(Boolean);
+  const fallbackSummary = fallbackSections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
+  return [firstUsefulSentence(fallbackSummary || clean(markdown) || clean(fallbackMarkdown))].filter(Boolean);
 }
 
 function firstUsefulSentence(text) {
