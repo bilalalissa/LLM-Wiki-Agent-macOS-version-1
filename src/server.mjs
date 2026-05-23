@@ -15,6 +15,7 @@ import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
 import { deleteSources } from "./source-delete.mjs";
+import { mergeSources } from "./source-merge.mjs";
 import { topicContent } from "./topic-content.mjs";
 import { listTopics } from "./topics.mjs";
 import { listVaults, vaultName } from "./vaults.mjs";
@@ -87,6 +88,25 @@ const server = http.createServer(async (request, response) => {
       const results = deleteSources(config, Array.isArray(sources) ? sources : []);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ results }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/merge-sources") {
+    try {
+      const body = await readBody(request);
+      const payload = JSON.parse(body || "{}");
+      const result = mergeSources(config, payload);
+      let archived = [];
+      if (payload.originalAction === "archive") {
+        archived = deleteSources(config, Array.isArray(payload.sources) ? payload.sources : []);
+      }
+      runAutoIngest();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ result, archived }));
     } catch (error) {
       response.writeHead(500, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: error.message }));
@@ -535,7 +555,9 @@ function renderHtml() {
     <section id="files-panel" class="panel">
       <p class="muted">Received and processed files are shown in local time.</p>
       <div class="result-tools">
+        <button id="merge-sources" class="secondary" type="button">Merge selected sources</button>
         <button id="delete-sources" class="secondary" type="button">Archive selected sources</button>
+        <span id="merge-sources-feedback" class="copy-feedback"></span>
         <span id="delete-sources-feedback" class="copy-feedback"></span>
       </div>
       <table>
@@ -684,6 +706,8 @@ function renderHtml() {
     const tabs = document.querySelectorAll(".tab");
     const filesBody = document.querySelector("#files-body");
     const archivesBody = document.querySelector("#archives-body");
+    const mergeSourcesButton = document.querySelector("#merge-sources");
+    const mergeSourcesFeedback = document.querySelector("#merge-sources-feedback");
     const deleteSourcesButton = document.querySelector("#delete-sources");
     const deleteSourcesFeedback = document.querySelector("#delete-sources-feedback");
     const deleteArchivesButton = document.querySelector("#delete-archives");
@@ -812,6 +836,7 @@ function renderHtml() {
     copyLocal.addEventListener("click", () => copyResult(localAnswer, filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()), localCopyFormat.value, localCopyFeedback));
     clearChat.addEventListener("click", () => clearChatResult());
     clearLocal.addEventListener("click", () => clearLocalResult());
+    mergeSourcesButton.addEventListener("click", mergeSelectedSources);
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
@@ -922,11 +947,7 @@ function renderHtml() {
     }
 
     async function deleteSelectedSources() {
-      const selected = Array.from(document.querySelectorAll(".source-select:checked")).map((item) => ({
-        vault: item.dataset.vault,
-        file: item.dataset.file,
-        sourcePage: item.dataset.sourcePage
-      }));
+      const selected = selectedSourceItems();
       if (!selected.length) {
         deleteSourcesFeedback.textContent = "Select a source first";
         setTimeout(() => { deleteSourcesFeedback.textContent = ""; }, 1600);
@@ -958,6 +979,59 @@ function renderHtml() {
         deleteSourcesButton.disabled = false;
         setTimeout(() => { deleteSourcesFeedback.textContent = ""; }, 2200);
       }
+    }
+
+    async function mergeSelectedSources() {
+      const selected = selectedSourceItems();
+      if (selected.length < 2) {
+        mergeSourcesFeedback.textContent = "Select at least two sources";
+        setTimeout(() => { mergeSourcesFeedback.textContent = ""; }, 1800);
+        return;
+      }
+      const vaults = [...new Set(selected.map((item) => item.vault))];
+      if (vaults.length !== 1) {
+        mergeSourcesFeedback.textContent = "Select sources from one vault";
+        setTimeout(() => { mergeSourcesFeedback.textContent = ""; }, 2200);
+        return;
+      }
+      const title = window.prompt("Merged source title", "Merged source from " + selected.length + " sources");
+      if (!title) return;
+      const archiveOriginals = window.confirm("After creating the merged source, archive the original selected sources and remove them from active wiki references?\\n\\nChoose OK to archive originals, or Cancel to keep them active.");
+      mergeSourcesButton.disabled = true;
+      mergeSourcesFeedback.textContent = "Merging...";
+      try {
+        const response = await fetch("/api/merge-sources", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sources: selected,
+            title,
+            originalAction: archiveOriginals ? "archive" : "keep"
+          })
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        const archivedCount = (data.archived || []).reduce((sum, item) => sum + (item.archived || []).length, 0);
+        mergeSourcesFeedback.textContent = "Merged to " + data.result.file + (archiveOriginals ? "; archived " + archivedCount + " files" : "; originals kept");
+        await loadFiles();
+        loadArchives();
+        loadTopics();
+        loadSideTopics();
+        loadStatus();
+      } catch (error) {
+        mergeSourcesFeedback.textContent = error.message;
+      } finally {
+        mergeSourcesButton.disabled = false;
+        setTimeout(() => { mergeSourcesFeedback.textContent = ""; }, 4200);
+      }
+    }
+
+    function selectedSourceItems() {
+      return Array.from(document.querySelectorAll(".source-select:checked")).map((item) => ({
+        vault: item.dataset.vault,
+        file: item.dataset.file,
+        sourcePage: item.dataset.sourcePage
+      }));
     }
 
     async function loadArchives() {
