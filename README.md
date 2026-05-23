@@ -267,9 +267,10 @@ The native macOS wrapper provides:
 - `Start at Login` toggle.
 - `Show Dock Icon` toggle.
 - `Close Button Keeps Running` toggle.
+- `Hide Setup Required on Startup` toggle.
 - Startup setup checks.
 
-`Close Button Keeps Running` is enabled by default. With it on, clicking the window close button hides the window and keeps the menu bar app and auto-ingest running in the background. Turn it off if you want the close button to quit the app. `Start at Login` may require macOS approval in System Settings.
+`Close Button Keeps Running` is enabled by default. With it on, clicking the window close button hides the window and keeps the menu bar app and auto-ingest running in the background. Turn it off if you want the close button to quit the app. `Hide Setup Required on Startup` suppresses the native startup setup prompt; setup status remains available in the app. `Start at Login` may require macOS approval in System Settings.
 
 [Back to top](#top)
 

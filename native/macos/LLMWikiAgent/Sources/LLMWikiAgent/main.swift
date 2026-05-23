@@ -10,7 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var startAtLoginItem: NSMenuItem!
     private var dockIconItem: NSMenuItem!
     private var closeBehaviorItem: NSMenuItem!
+    private var setupAlertItem: NSMenuItem!
     private let closeBehaviorKey = "closeButtonKeepsRunning"
+    private let hideSetupAlertKey = "hideSetupRequiredOnStartup"
     private let configPathKey = "configFilePath"
     private let port = "8789"
     private var appSupport: URL {
@@ -66,9 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         startAtLoginItem = menuItem("Start at Login", #selector(toggleLoginItem), "")
         dockIconItem = menuItem("Show Dock Icon", #selector(toggleDockIcon), "")
         closeBehaviorItem = menuItem("Close Button Keeps Running", #selector(toggleCloseBehavior), "")
+        setupAlertItem = menuItem("Hide Setup Required on Startup", #selector(toggleSetupAlert), "")
         menu.addItem(startAtLoginItem)
         menu.addItem(dockIconItem)
         menu.addItem(closeBehaviorItem)
+        menu.addItem(setupAlertItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(menuItem("Quit", #selector(quit), "q"))
         statusItem.menu = menu
@@ -183,6 +187,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         updateMenuStates()
     }
 
+    @objc private func toggleSetupAlert() {
+        UserDefaults.standard.set(!hideSetupRequiredOnStartup, forKey: hideSetupAlertKey)
+        updateMenuStates()
+    }
+
     @objc private func closeWindowCommand() {
         _ = windowShouldClose(window)
     }
@@ -260,8 +269,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         return UserDefaults.standard.bool(forKey: closeBehaviorKey)
     }
 
+    private var hideSetupRequiredOnStartup: Bool {
+        UserDefaults.standard.bool(forKey: hideSetupAlertKey)
+    }
+
     private func updateMenuStates() {
         closeBehaviorItem?.state = closeButtonKeepsRunning ? .on : .off
+        setupAlertItem?.state = hideSetupRequiredOnStartup ? .on : .off
         dockIconItem?.state = NSApp.activationPolicy() == .regular ? .on : .off
         if #available(macOS 13.0, *) {
             switch SMAppService.mainApp.status {
@@ -393,8 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         if !providerConfigured() {
             problems.append("Configure at least one AI provider in config.env. For ChatGPT subscription mode, install Codex CLI and run `codex login`.")
         }
-        if !problems.isEmpty {
-            showAlert("Setup required", problems.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n\n"))
+        if !problems.isEmpty && !hideSetupRequiredOnStartup {
+            showSetupRequiredAlert(problems.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n\n"))
         }
     }
 
@@ -466,6 +480,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             alert.informativeText = message
             alert.alertStyle = .warning
             alert.runModal()
+        }
+    }
+
+    private func showSetupRequiredAlert(_ message: String) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Setup required"
+            alert.informativeText = "\(message)\n\nYou can change this later from the menu bar icon."
+            alert.alertStyle = .warning
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Do not show this setup message on startup"
+            alert.runModal()
+            if alert.suppressionButton?.state == .on {
+                UserDefaults.standard.set(true, forKey: self.hideSetupAlertKey)
+                self.updateMenuStates()
+            }
         }
     }
 }
