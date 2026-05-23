@@ -174,10 +174,17 @@ Generated source pages and generated linked wiki pages should include these stru
 
 - \`Open Questions\`: unresolved source or wiki maintenance questions.
 - \`Contradictions\`: source conflicts, tension, or "None yet."
-- \`Source's Related Learning Questions\`: source-grounded questions that help the user practice, connect, and retain the material.
-- \`Open Learning Questions\`: broader questions that expand knowledge, transfer, and global awareness beyond the source.
+- \`Source's Related Learning Questions\`: source-grounded questions and answers that help the user practice, connect, and retain the material.
+- \`Open Learning Questions\`: broader questions and answers that expand knowledge, transfer, and global awareness beyond the source.
 
-Learning questions must be phrased as questions, not claims. They should help the user discover adjacent domains, real-world implications, history, geography, ethics, systems, or cross-topic links without inventing facts.`;
+Each learning item should use this format:
+
+\`\`\`md
+- Q: Question text?
+  A: Source-grounded answer text.
+\`\`\`
+
+Learning questions must be phrased as questions, not claims. Answers must remain source-grounded, distinguish uncertainty from fact, and help the user discover adjacent domains, real-world implications, history, geography, ethics, systems, or cross-topic links without inventing facts.`;
 }
 
 function mediaRulesTemplate() {

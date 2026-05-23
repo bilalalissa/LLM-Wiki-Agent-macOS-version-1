@@ -30,14 +30,25 @@ export function backfillLearningSections(config = getConfig()) {
 
 function ensureLearningSections(markdown, rel) {
   const title = extractTitle(markdown, rel);
-  const userNotes = markdown.match(/\n## User Notes[\s\S]*$/m)?.[0] || "";
+  const userNotes = markdown.match(/\n## User Notes[\s\S]*$/m)?.[0]?.trimEnd() || "";
   let body = userNotes ? markdown.slice(0, -userNotes.length).trimEnd() : markdown.trimEnd();
   body = repairStrandedKeyPoints(body);
+  body = repairLearningLinesInKeyPoints(body);
 
-  const sourceLearning = extractSection(body, "Source's Related Learning Questions") ||
-    `## Source's Related Learning Questions\n\n${sourceLearningQuestions(title)}`;
-  const openLearning = extractSection(body, "Open Learning Questions") ||
-    `## Open Learning Questions\n\n${openLearningQuestions(title)}`;
+  const sourceLearning = renderLearningSection(
+    "Source's Related Learning Questions",
+    learningItemsFromSection(extractSection(body, "Source's Related Learning Questions"), "source", title, body),
+    "source",
+    title,
+    body
+  );
+  const openLearning = renderLearningSection(
+    "Open Learning Questions",
+    learningItemsFromSection(extractSection(body, "Open Learning Questions"), "open", title, body),
+    "open",
+    title,
+    body
+  );
 
   body = removeSection(removeSection(body, "Source's Related Learning Questions"), "Open Learning Questions").trimEnd();
   const learningBlock = `${sourceLearning.trim()}\n\n${openLearning.trim()}`;
@@ -61,7 +72,9 @@ function repairStrandedKeyPoints(markdown) {
       if (!inStranded) questionLines.push(line);
     } else if (!inStranded && isDefaultSourceLearningLine(trimmed)) {
       sourceLines.push(line);
-    } else if (!inStranded && /\?\s*$/.test(trimmed)) {
+    } else if (!inStranded && isLearningAnswerLine(trimmed)) {
+      questionLines.push(line);
+    } else if (!inStranded && isLearningQuestionLine(trimmed)) {
       questionLines.push(line);
     } else {
       inStranded = true;
@@ -77,6 +90,26 @@ function repairStrandedKeyPoints(markdown) {
 
 function isDefaultSourceLearningLine(line) {
   return /without reopening the source\?|deserve practice or follow-up notes\?/i.test(line);
+}
+
+function isLearningQuestionLine(line) {
+  return /^-\s*(?:Q:\s*)?.+\?\s*$/i.test(line);
+}
+
+function isLearningAnswerLine(line) {
+  return /^(?:-\s*)?A:\s*.+/i.test(line);
+}
+
+function repairLearningLinesInKeyPoints(markdown) {
+  const keyPoints = extractSection(markdown, "Key Points");
+  if (!keyPoints) return markdown;
+  const lines = keyPoints.split(/\r?\n/);
+  const cleaned = lines.filter((line) => {
+    const trimmed = line.trim();
+    return !isLearningQuestionLine(trimmed) && !isLearningAnswerLine(trimmed);
+  }).join("\n");
+  if (cleaned === keyPoints) return markdown;
+  return markdown.replace(keyPoints, cleaned);
 }
 
 function dedupeLines(lines) {
@@ -124,18 +157,170 @@ function extractTitle(markdown, rel) {
     path.basename(rel, ".md").replace(/^\d{4}-\d{2}-\d{2}--/, "").replace(/-/g, " ");
 }
 
-function sourceLearningQuestions(title) {
-  return [
-    `- What should I be able to explain from "${title}" without reopening the source?`,
-    `- Which examples, definitions, claims, or procedures in "${title}" deserve practice or follow-up notes?`
-  ].join("\n");
+function renderLearningSection(heading, items, kind, title, markdown) {
+  const normalized = items.length ? items : defaultLearningItems(kind, title, markdown);
+  return `## ${heading}\n\n${normalized.map((item) => {
+    const question = item.question || defaultQuestion(kind, title);
+    const answer = cleanAnswer(item.answer || answerForQuestion(question, kind, title, markdown));
+    return `- Q: ${question}\n  A: ${answer}`;
+  }).join("\n")}`;
 }
 
-function openLearningQuestions(title) {
+function learningItemsFromSection(section, kind, title, markdown) {
+  const defaults = defaultLearningItems(kind, title, markdown);
+  if (!section) return defaults;
+  const body = section.replace(/^##\s+.+?\s*\n/, "").trim();
+  if (!body) return defaults;
+
+  const lines = body.split(/\r?\n/);
+  const items = [];
+  let current = null;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const questionMatch = trimmed.match(/^-\s*(?:Q:\s*)?(.+?)\s*$/i);
+    const answerMatch = trimmed.match(/^(?:-\s*)?A:\s*(.+?)\s*$/i);
+    const indentedAnswerMatch = line.match(/^\s+A:\s*(.+?)\s*$/i);
+    if (answerMatch || indentedAnswerMatch) {
+      if (!current) current = { question: defaultQuestion(kind, title), answer: "" };
+      current.answer = (answerMatch?.[1] || indentedAnswerMatch?.[1] || "").trim();
+    } else if (questionMatch) {
+      if (current) items.push(current);
+      current = { question: questionMatch[1].trim(), answer: "" };
+    } else if (current) {
+      current.answer = [current.answer, trimmed].filter(Boolean).join(" ");
+    }
+  }
+  if (current) items.push(current);
+  const normalized = items.map((item) => ({
+    question: item.question,
+    answer: item.answer || answerForQuestion(item.question, kind, title, markdown)
+  }));
+  for (const item of defaults) {
+    if (!normalized.some((existing) => normalizeQuestion(existing.question) === normalizeQuestion(item.question))) {
+      normalized.push(item);
+    }
+  }
+  return normalized;
+}
+
+function defaultLearningItems(kind, title, markdown) {
+  if (kind === "source") {
+    return [
+      {
+        question: `What should I be able to explain from "${title}" without reopening the source?`,
+        answer: answerForQuestion("", kind, title, markdown)
+      },
+      {
+        question: `Which examples, definitions, claims, or procedures in "${title}" deserve practice or follow-up notes?`,
+        answer: practiceAnswer(title, markdown)
+      }
+    ];
+  }
   return [
-    `- How does "${title}" connect to adjacent domains, real-world systems, or global context?`,
-    `- What newer, broader, or conflicting source would most improve my understanding of "${title}"?`
-  ].join("\n");
+    {
+      question: `How does "${title}" connect to adjacent domains, real-world systems, or global context?`,
+      answer: connectionAnswer(title, markdown)
+    },
+    {
+      question: `What newer, broader, or conflicting source would most improve my understanding of "${title}"?`,
+      answer: improvementAnswer(markdown)
+    }
+  ];
+}
+
+function defaultQuestion(kind, title) {
+  return kind === "source"
+    ? `What should I be able to explain from "${title}" without reopening the source?`
+    : `How does "${title}" connect to adjacent domains, real-world systems, or global context?`;
+}
+
+function answerForQuestion(question, kind, title, markdown) {
+  if (/examples|definitions|claims|procedures|practice|follow-up/i.test(question)) return practiceAnswer(title, markdown);
+  if (/newer|broader|conflicting|improve/i.test(question)) return improvementAnswer(markdown);
+  if (kind === "open" || /connect|adjacent|global|context|real-world|systems/i.test(question)) return connectionAnswer(title, markdown);
+  return sourceAnswer(title, markdown);
+}
+
+function sourceAnswer(title, markdown) {
+  const points = sectionBullets(markdown, "Key Points").slice(0, 3).map(cleanSentencePart);
+  if (points.length) return `Explain the source through these key points: ${sentence(points.join("; "))}`;
+  const summary = sectionText(markdown, "Summary");
+  if (summary) return `Start from the source summary: ${sentence(summary)}`;
+  return `Use the Summary and Key Points in "${title}" as the answer base, and avoid adding claims that are not supported by the source.`;
+}
+
+function practiceAnswer(title, markdown) {
+  const points = sectionBullets(markdown, "Key Points").slice(0, 4).map(cleanSentencePart);
+  const links = sectionBullets(markdown, "Links").slice(0, 5).map(cleanSentencePart);
+  if (links.length) return `Practice by explaining the linked ideas and why they matter here: ${sentence(stripWiki(links.join("; ")))}.`;
+  if (points.length) return `Convert these points into recall prompts or examples: ${sentence(points.join("; "))}`;
+  return `Turn the named examples, definitions, and claims in "${title}" into short recall prompts and follow-up notes.`;
+}
+
+function connectionAnswer(title, markdown) {
+  const links = sectionBullets(markdown, "Links").slice(0, 5).map(cleanSentencePart);
+  if (links.length) return `The current source-backed connections are: ${sentence(stripWiki(links.join("; ")))}. Broader links should be added when later sources support them.`;
+  const questions = sectionBullets(markdown, "Open Questions").slice(0, 2).map(cleanSentencePart);
+  if (questions.length) return `Use the open questions as the next bridge outward: ${sentence(questions.join("; "))}`;
+  return `"${title}" should be connected outward through future sources, examples, systems, and real-world cases only when the wiki has evidence for those links.`;
+}
+
+function improvementAnswer(markdown) {
+  const contradictions = sectionBullets(markdown, "Contradictions").filter((item) => !/^none yet\.?$/i.test(item)).slice(0, 2).map(cleanSentencePart);
+  if (contradictions.length) return `Prioritize sources that clarify these tensions: ${sentence(contradictions.join("; "))}`;
+  const questions = sectionBullets(markdown, "Open Questions").slice(0, 2).map(cleanSentencePart);
+  if (questions.length) return `Look for sources that answer or challenge these unresolved questions: ${sentence(questions.join("; "))}`;
+  return "A newer, broader, or conflicting source would improve the wiki by testing the current synthesis and either confirming, refining, or contradicting it.";
+}
+
+function sectionText(markdown, heading) {
+  return extractSection(markdown, heading)
+    .replace(/^##\s+.+?\s*\n/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sectionBullets(markdown, heading) {
+  return extractSection(markdown, heading)
+    .replace(/^##\s+.+?\s*\n/, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^-\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function stripWiki(value) {
+  return String(value)
+    .replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, "$2")
+    .replace(/\[\[([^\]]+)\]\]/g, "$1");
+}
+
+function sentence(value) {
+  const text = cleanSentencePart(value);
+  if (!text) return "";
+  return text.length > 360 ? `${text.slice(0, 357).trim()}...` : `${text}.`;
+}
+
+function cleanSentencePart(value) {
+  return String(value)
+    .replace(/\s+/g, " ")
+    .replace(/\s*([.;:!?])\s*;/g, ";")
+    .replace(/[.。]+$/g, "")
+    .trim();
+}
+
+function cleanAnswer(value) {
+  return String(value)
+    .replace(/;\s+/g, "; ")
+    .replace(/\.\.;/g, ";")
+    .replace(/\.;/g, ";")
+    .replace(/\.{2,}/g, "...")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeQuestion(value) {
+  return String(value).toLowerCase().replace(/["'`]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function walk(dir, result) {

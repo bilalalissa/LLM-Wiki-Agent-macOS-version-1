@@ -228,8 +228,8 @@ Return strict JSON with this shape:
   "entities": [{"name": "Entity Name", "summary": "one sentence"}],
   "open_questions": ["question"],
   "contradictions": ["contradiction or empty"],
-  "source_learning_questions": ["learning question grounded in this media source"],
-  "open_learning_questions": ["broader learning question that expands context, transfer, or global awareness"],
+  "source_learning_questions": [{"question": "learning question grounded in this media source", "answer": "source-grounded answer"}],
+  "open_learning_questions": [{"question": "broader learning question that expands context, transfer, or global awareness", "answer": "careful answer using source-grounded connections and noting uncertainty"}],
   "processing_notes": ["what was inspected and any limitations"]
 }`;
 
@@ -254,8 +254,8 @@ function parseMediaJson(text, media) {
     entities: asArray(raw.entities).map(normalizeNamed),
     open_questions: asArray(raw.open_questions),
     contradictions: asArray(raw.contradictions),
-    source_learning_questions: asArray(raw.source_learning_questions),
-    open_learning_questions: asArray(raw.open_learning_questions)
+    source_learning_questions: asLearningItems(raw.source_learning_questions),
+    open_learning_questions: asLearningItems(raw.open_learning_questions)
   };
   return {
     ...parsed,
@@ -277,8 +277,14 @@ function fallbackMediaAnalysis(media, error) {
     entities: [],
     open_questions: ["What does this media show, contain, or prove?"],
     contradictions: [],
-    source_learning_questions: [`What should I learn from this ${media.kind} source before connecting it to other notes?`],
-    open_learning_questions: [`How does this ${media.kind} source connect to broader concepts, tools, or real-world contexts?`],
+    source_learning_questions: [{
+      question: `What should I learn from this ${media.kind} source before connecting it to other notes?`,
+      answer: `Use the preserved metadata and any later human or provider inspection to identify what the ${media.kind} source actually contains before drawing conclusions.`
+    }],
+    open_learning_questions: [{
+      question: `How does this ${media.kind} source connect to broader concepts, tools, or real-world contexts?`,
+      answer: "Treat this as an open connection until the media content is inspected; then link it to the relevant concepts, tools, systems, or examples."
+    }],
     processing_notes: [`Media analysis fallback used: ${error.message}`],
     analyzed: false,
     status: "fallback"
@@ -366,8 +372,8 @@ Return strict JSON with this shape:
   "entities": [{"name": "Entity Name", "summary": "one sentence"}],
   "open_questions": ["question"],
   "contradictions": ["contradiction or empty"],
-  "source_learning_questions": ["learning question grounded in this source"],
-  "open_learning_questions": ["broader learning question that expands context, transfer, or global awareness"]
+  "source_learning_questions": [{"question": "learning question grounded in this source", "answer": "source-grounded answer"}],
+  "open_learning_questions": [{"question": "broader learning question that expands context, transfer, or global awareness", "answer": "careful answer using source-grounded connections and noting uncertainty"}]
 }
 
 Source text:
@@ -390,13 +396,23 @@ function parseJson(text) {
     entities: asArray(data.entities).map(normalizeNamed),
     open_questions: asArray(data.open_questions),
     contradictions: asArray(data.contradictions),
-    source_learning_questions: asArray(data.source_learning_questions),
-    open_learning_questions: asArray(data.open_learning_questions)
+    source_learning_questions: asLearningItems(data.source_learning_questions),
+    open_learning_questions: asLearningItems(data.open_learning_questions)
   };
 }
 
 function asArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function asLearningItems(value) {
+  return asArray(value).map((item) => {
+    if (typeof item === "string") return { question: item, answer: "" };
+    return {
+      question: String(item.question || item.q || "").trim(),
+      answer: String(item.answer || item.a || "").trim()
+    };
+  }).filter((item) => item.question || item.answer);
 }
 
 function normalizeNamed(value) {
@@ -437,11 +453,11 @@ ${bulletList(analysis.key_points)}
 
 ## Source's Related Learning Questions
 
-${bulletList(learningQuestions(analysis.source_learning_questions, sourceTitle))}
+${learningBlock(learningQuestions(analysis.source_learning_questions, sourceTitle, analysis))}
 
 ## Open Learning Questions
 
-${bulletList(openLearningQuestions(analysis.open_learning_questions, sourceTitle))}
+${learningBlock(openLearningQuestions(analysis.open_learning_questions, sourceTitle, analysis))}
 
 ## Evidence
 
@@ -500,11 +516,11 @@ ${bulletList(analysis.key_points)}
 
 ## Source's Related Learning Questions
 
-${bulletList(learningQuestions(analysis.source_learning_questions, sourceTitle))}
+${learningBlock(learningQuestions(analysis.source_learning_questions, sourceTitle, analysis))}
 
 ## Open Learning Questions
 
-${bulletList(openLearningQuestions(analysis.open_learning_questions, sourceTitle))}
+${learningBlock(openLearningQuestions(analysis.open_learning_questions, sourceTitle, analysis))}
 
 ## Processing Notes
 
@@ -565,26 +581,66 @@ None yet.
 
 ## Source's Related Learning Questions
 
-- How does this concept help explain or organize the source that introduced it?
+- Q: How does this concept help explain or organize the source that introduced it?
+  A: It gives the source a reusable concept page that can collect definitions, links, evidence, and follow-up questions across future sources.
 
 ## Open Learning Questions
 
-- Where else could this concept apply beyond the original source?
+- Q: Where else could this concept apply beyond the original source?
+  A: Use future ingests and queries to connect this concept to adjacent tools, domains, examples, and real-world systems without adding unsupported claims.
 `;
 }
 
-function learningQuestions(items, title) {
+function learningQuestions(items, title, analysis = {}) {
   return items?.length ? items : [
-    `What are the most important ideas in "${title}" that I should be able to explain without rereading the source?`,
-    `Which examples, terms, or claims from "${title}" should become follow-up notes or practice prompts?`
+    {
+      question: `What are the most important ideas in "${title}" that I should be able to explain without rereading the source?`,
+      answer: sourceGroundedAnswer(analysis, title)
+    },
+    {
+      question: `Which examples, terms, or claims from "${title}" should become follow-up notes or practice prompts?`,
+      answer: practiceAnswer(analysis, title)
+    }
   ];
 }
 
-function openLearningQuestions(items, title) {
+function openLearningQuestions(items, title, analysis = {}) {
   return items?.length ? items : [
-    `How does "${title}" connect to adjacent topics, tools, people, places, or systems outside this source?`,
-    `What would change my understanding of this topic if I found a newer, broader, or conflicting source?`
+    {
+      question: `How does "${title}" connect to adjacent topics, tools, people, places, or systems outside this source?`,
+      answer: connectionAnswer(analysis, title)
+    },
+    {
+      question: "What would change my understanding of this topic if I found a newer, broader, or conflicting source?",
+      answer: "A newer or conflicting source should update the synthesis, contradictions, and links on this page while preserving the original source as evidence."
+    }
   ];
+}
+
+function learningBlock(items) {
+  return items?.length ? items.map((item) => {
+    const question = typeof item === "string" ? item : item.question;
+    const answer = typeof item === "string" ? "" : item.answer;
+    return `- Q: ${question || ""}\n  A: ${answer || "Answer not yet supplied."}`;
+  }).join("\n") : "- ";
+}
+
+function sourceGroundedAnswer(analysis, title) {
+  const points = asArray(analysis.key_points).slice(0, 3).join("; ");
+  if (points) return `Focus on these source-backed points: ${points}.`;
+  return `Start from the Summary and Key Points for "${title}", then restate the source's core claim in your own words.`;
+}
+
+function practiceAnswer(analysis, title) {
+  const concepts = asArray(analysis.concepts).map((item) => item.name).filter(Boolean).slice(0, 5).join(", ");
+  if (concepts) return `Use these linked concepts as practice anchors: ${concepts}.`;
+  return `Turn the named examples, definitions, and claims in "${title}" into recall prompts and short explanation notes.`;
+}
+
+function connectionAnswer(analysis, title) {
+  const concepts = asArray(analysis.concepts).map((item) => item.name).filter(Boolean).slice(0, 5).join(", ");
+  if (concepts) return `"${title}" currently connects through: ${concepts}. Expand from those concepts into adjacent domains only when sources support the link.`;
+  return `Use future sources to connect "${title}" to adjacent domains, systems, and real-world examples without inventing unsupported links.`;
 }
 
 function updateIndex(vaultPath, { date, sourceRel, sourceTitle, analysis, conceptPages }) {
