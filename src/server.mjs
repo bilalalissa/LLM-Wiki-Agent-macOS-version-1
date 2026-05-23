@@ -474,6 +474,7 @@ function renderHtml() {
     body[data-theme="sepia"] { --bg: #f4ecd8; --text: #2f271f; --panel: #fffaf0; --line: #d8c7a3; --soft: #eadfca; --muted: #75664f; --accent: #8a5a19; --accent-text: #ffffff; --shadow: rgba(80, 58, 28, 0.12); --mark: #ffe08a; }
     body[data-theme="forest"] { --bg: #edf5ef; --text: #10251a; --panel: #fbfffc; --line: #b8d0c0; --soft: #dcebe1; --muted: #55705f; --accent: #22734a; --accent-text: #ffffff; --shadow: rgba(24, 82, 53, 0.12); --mark: #c7f2a7; }
     body[data-theme="contrast"] { --bg: #ffffff; --text: #000000; --panel: #ffffff; --line: #000000; --soft: #eeeeee; --muted: #333333; --accent: #000000; --accent-text: #ffffff; --shadow: rgba(0, 0, 0, 0.2); --mark: #ffff00; }
+    body[data-theme="megatron"] { --bg: #0b0d12; --text: #e8eef7; --panel: #161a23; --line: #3b4354; --soft: #222838; --muted: #9aa8bd; --accent: #39d5ff; --accent-text: #061019; --shadow: rgba(0, 0, 0, 0.36); --mark: #705d17; }
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
     main { max-width: 920px; margin: 0 auto; padding: 32px 300px 32px 20px; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
@@ -587,6 +588,7 @@ function renderHtml() {
           <option value="sepia">Sepia</option>
           <option value="forest">Forest</option>
           <option value="contrast">Contrast</option>
+          <option value="megatron">Megatron</option>
         </select>
         <a class="help" href="/help" target="_blank" rel="noreferrer">Help</a>
       </div>
