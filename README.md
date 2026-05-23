@@ -202,6 +202,15 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 
 Useful chat answers can be saved back into `raw/input/` and ingested like any other source.
 
+Local result display options:
+
+- `Tree + accordion` groups results by vault and wiki element, then lets each result expand or collapse.
+- `Accordion` shows a flatter list of expandable results.
+- `Plain` shows the original rendered markdown answer.
+- `Start` controls whether results begin collapsed, expanded, or with only the first result expanded.
+
+The Local display preference is saved on the device.
+
 Adding notes from Chat or Local results:
 
 - Select text in a result box and click `Add note`.

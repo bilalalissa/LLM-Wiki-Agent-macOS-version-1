@@ -505,6 +505,14 @@ function renderHtml() {
     .answer p { margin: 0 0 12px; }
     .answer ul, .answer ol { margin-top: 0; padding-left: 24px; }
     .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
+    .local-display-tools { justify-content: flex-start; margin-top: 0; }
+    .local-tree { display: grid; gap: 10px; }
+    .local-tree-vault { border-left: 3px solid var(--line); padding-left: 12px; }
+    .local-tree-type { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 12px; }
+    details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
+    details.local-result > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
+    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; }
+    .local-result-count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 6px; }
     mark.agent-highlight { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 2px; }
     .note-anchor { color: inherit; }
     .note-indicator { display: inline-block; margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 0 5px; font-size: 11px; color: var(--accent); background: var(--soft); vertical-align: super; cursor: default; }
@@ -621,6 +629,20 @@ function renderHtml() {
         <button id="clear-local" class="secondary" type="button">Clear</button>
       </form>
       <p class="muted">Local mode searches stored wiki markdown only. It does not call an AI provider and does not connect to the internet.</p>
+      <div class="result-tools local-display-tools">
+        <label class="muted" for="local-result-view">View</label>
+        <select id="local-result-view">
+          <option value="combined">Tree + accordion</option>
+          <option value="accordion">Accordion</option>
+          <option value="plain">Plain</option>
+        </select>
+        <label class="muted" for="local-result-expand">Start</label>
+        <select id="local-result-expand">
+          <option value="first">First result expanded</option>
+          <option value="collapsed">Collapsed</option>
+          <option value="expanded">Expanded</option>
+        </select>
+      </div>
       <div class="result-tools">
         <select id="local-copy-format">
           <option value="text">Pure text</option>
@@ -808,6 +830,8 @@ function renderHtml() {
     const copyLocal = document.querySelector("#copy-local");
     const localCopyFormat = document.querySelector("#local-copy-format");
     const localCopyFeedback = document.querySelector("#local-copy-feedback");
+    const localResultView = document.querySelector("#local-result-view");
+    const localResultExpand = document.querySelector("#local-result-expand");
     const tabs = document.querySelectorAll(".tab");
     const filesBody = document.querySelector("#files-body");
     const filesFilter = document.querySelector("#files-filter");
@@ -893,6 +917,17 @@ function renderHtml() {
       refreshResultAnnotations();
     });
 
+    localResultView.value = localStorage.getItem("llm-wiki-local-result-view") || "combined";
+    localResultExpand.value = localStorage.getItem("llm-wiki-local-result-expand") || "first";
+    localResultView.addEventListener("change", () => {
+      localStorage.setItem("llm-wiki-local-result-view", localResultView.value);
+      renderLocalResultBox();
+    });
+    localResultExpand.addEventListener("change", () => {
+      localStorage.setItem("llm-wiki-local-result-expand", localResultExpand.value);
+      renderLocalResultBox();
+    });
+
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => {
         tabs.forEach((item) => item.classList.remove("active"));
@@ -945,8 +980,7 @@ function renderHtml() {
         });
         const data = await response.json();
         lastLocalMarkdown = data.answer || data.error || "No answer.";
-        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
-        applyNoteAnnotations(localAnswer);
+        renderLocalResultBox();
       } catch (error) {
         localAnswer.textContent = error.message;
       } finally {
@@ -1578,8 +1612,7 @@ function renderHtml() {
         const response = await fetch("/api/topic-content?" + params.toString());
         const data = await response.json();
         lastLocalMarkdown = data.answer || data.error || "No topic content.";
-        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
-        applyNoteAnnotations(localAnswer);
+        renderLocalResultBox();
       } catch (error) {
         localAnswer.textContent = error.message;
       }
@@ -1652,6 +1685,125 @@ function renderHtml() {
       }
       if (inList) html.push("</ul>");
       return html.join("");
+    }
+
+    function renderLocalResultBox() {
+      if (!lastLocalMarkdown) {
+        localAnswer.textContent = "Ready for local search.";
+        return;
+      }
+      if (localResultView.value === "plain") {
+        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
+      } else {
+        localAnswer.innerHTML = renderLocalStructured(lastLocalMarkdown);
+      }
+      applyNoteAnnotations(localAnswer);
+    }
+
+    function renderLocalStructured(markdown) {
+      const parsed = parseLocalResults(markdown);
+      if (!parsed.results.length) return renderMarkdown(markdown);
+      const before = parsed.intro ? '<p class="muted">' + inlineMarkdown(parsed.intro) + '</p>' : "";
+      const after = parsed.footer ? '<p class="muted">' + inlineMarkdown(parsed.footer) + '</p>' : "";
+      const body = localResultView.value === "accordion"
+        ? renderLocalAccordion(parsed.results)
+        : renderLocalCombined(parsed.results);
+      return before + body + after;
+    }
+
+    function parseLocalResults(markdown) {
+      const lines = String(markdown || "").split(/\\r?\\n/);
+      const intro = [];
+      const results = [];
+      const footer = [];
+      let current = null;
+      let mode = "intro";
+      for (const line of lines) {
+        const heading = line.match(/^##\\s+(.+)$/);
+        if (heading) {
+          if (current) results.push(current);
+          current = { title: heading[1].trim(), ref: "", snippets: [] };
+          mode = "result";
+          continue;
+        }
+        if (mode === "result" && current) {
+          if (!current.ref && /^[A-Za-z0-9_-]+-vault\\s+\\/\\s+wiki\\/.+/.test(line.trim())) {
+            current.ref = line.trim();
+          } else if (/^\\s*[-*]\\s+/.test(line)) {
+            current.snippets.push(line.replace(/^\\s*[-*]\\s+/, "").trim());
+          } else if (line.trim() && current.ref) {
+            footer.push(line.trim());
+            mode = "footer";
+          }
+        } else if (mode === "intro") {
+          if (line.trim()) intro.push(line.trim());
+        } else if (line.trim()) {
+          footer.push(line.trim());
+        }
+      }
+      if (current) results.push(current);
+      return {
+        intro: intro.join(" "),
+        results,
+        footer: footer.join(" ")
+      };
+    }
+
+    function renderLocalAccordion(results) {
+      return results.map((result, index) => renderLocalResultDetails(result, index)).join("");
+    }
+
+    function renderLocalCombined(results) {
+      const groups = new Map();
+      for (const result of results) {
+        const ref = parseSourceRef(result.ref);
+        const vault = ref.vault || "Unknown vault";
+        const type = ref.type || "wiki";
+        if (!groups.has(vault)) groups.set(vault, new Map());
+        if (!groups.get(vault).has(type)) groups.get(vault).set(type, []);
+        groups.get(vault).get(type).push(result);
+      }
+      let index = 0;
+      const html = [];
+      for (const [vault, types] of groups) {
+        html.push('<div class="local-tree"><div class="local-tree-vault"><h3>' + escapeHtml(vault) + '</h3>');
+        for (const [type, items] of types) {
+          html.push('<div class="local-tree-type"><h4>' + escapeHtml(type) + '<span class="local-result-count">' + items.length + '</span></h4>');
+          for (const item of items) {
+            html.push(renderLocalResultDetails(item, index));
+            index += 1;
+          }
+          html.push('</div>');
+        }
+        html.push('</div></div>');
+      }
+      return html.join("");
+    }
+
+    function renderLocalResultDetails(result, index) {
+      const open = shouldOpenLocalResult(index) ? " open" : "";
+      const snippets = result.snippets.length ? result.snippets : ["No snippet available."];
+      return '<details class="local-result"' + open + '>' +
+        '<summary>' + escapeHtml(result.title) + '</summary>' +
+        '<div class="local-result-body">' +
+        (result.ref ? '<p class="source-ref">' + inlineMarkdown(result.ref) + '</p>' : '') +
+        '<ul>' + snippets.map((snippet) => '<li>' + inlineMarkdown(snippet) + '</li>').join("") + '</ul>' +
+        '</div></details>';
+    }
+
+    function shouldOpenLocalResult(index) {
+      if (localResultExpand.value === "expanded") return true;
+      if (localResultExpand.value === "first") return index === 0;
+      return false;
+    }
+
+    function parseSourceRef(ref) {
+      const parts = String(ref || "").split("/").map((part) => part.trim()).filter(Boolean);
+      return {
+        vault: parts[0] || "",
+        type: parts[2] || "",
+        path: parts.slice(1).join("/")
+      };
     }
 
     function inlineMarkdown(value) {
@@ -1981,8 +2133,7 @@ function renderHtml() {
         applyNoteAnnotations(answer);
       }
       if (lastLocalMarkdown) {
-        localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
-        applyNoteAnnotations(localAnswer);
+        renderLocalResultBox();
       }
     }
 
