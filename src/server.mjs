@@ -861,6 +861,10 @@ function renderHtml() {
 
     localForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      await runLocalSearch();
+    });
+
+    async function runLocalSearch() {
       localButton.disabled = true;
       localAnswer.textContent = "Searching stored wiki pages...";
       try {
@@ -878,18 +882,18 @@ function renderHtml() {
       } finally {
         localButton.disabled = false;
       }
-    });
+    }
 
     localToggleAllStructure.addEventListener("change", () => {
       localStructureToggles.forEach((item) => { item.checked = localToggleAllStructure.checked; });
       persistLocalSectionToggles();
-      rerenderLocalAnswer();
+      refreshLocalForStructureChange();
     });
     localStructureToggles.forEach((item) => {
       item.addEventListener("change", () => {
         localToggleAllStructure.checked = Array.from(localStructureToggles).every((toggle) => toggle.checked);
         persistLocalSectionToggles();
-        rerenderLocalAnswer();
+        refreshLocalForStructureChange();
       });
     });
 
@@ -987,6 +991,14 @@ function renderHtml() {
       if (!lastLocalMarkdown.trim()) return;
       localAnswer.innerHTML = renderMarkdown(filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()));
       applyNoteAnnotations(localAnswer);
+    }
+
+    function refreshLocalForStructureChange() {
+      if (localInput.value.trim()) {
+        runLocalSearch();
+      } else {
+        rerenderLocalAnswer();
+      }
     }
 
     async function saveChatAsSource() {
@@ -1632,7 +1644,7 @@ function renderHtml() {
       for (const key of hiddenSections || []) {
         const heading = names[key];
         if (!heading) continue;
-        result = result.replace(new RegExp("\\n##\\s+" + escapeRegExp(heading) + "\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)"), "");
+        result = result.replace(new RegExp("(^|\\n)##\\s+" + escapeRegExp(heading) + "\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)"), "");
       }
       return result;
     }

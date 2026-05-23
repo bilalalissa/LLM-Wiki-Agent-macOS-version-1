@@ -135,7 +135,7 @@ function filterStructuralSections(markdown, options = {}) {
 }
 
 function removeSection(markdown, heading) {
-  const pattern = new RegExp(`\\n##\\s+${escapeRegExp(heading)}\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)`);
+  const pattern = new RegExp(`(^|\\n)##\\s+${escapeRegExp(heading)}\\s*\\n[\\s\\S]*?(?=\\n##\\s+|$)`);
   return markdown.replace(pattern, "");
 }
 
