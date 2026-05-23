@@ -16,6 +16,7 @@ import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
 import { deleteSources } from "./source-delete.mjs";
 import { mergeSources } from "./source-merge.mjs";
+import { renameSource } from "./source-rename.mjs";
 import { topicContent } from "./topic-content.mjs";
 import { listTopics } from "./topics.mjs";
 import { listVaults, vaultName } from "./vaults.mjs";
@@ -107,6 +108,19 @@ const server = http.createServer(async (request, response) => {
       runAutoIngest();
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ result, archived }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/rename-source") {
+    try {
+      const body = await readBody(request);
+      const result = renameSource(config, JSON.parse(body || "{}"));
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ result }));
     } catch (error) {
       response.writeHead(500, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: error.message }));
@@ -555,8 +569,10 @@ function renderHtml() {
     <section id="files-panel" class="panel">
       <p class="muted">Received and processed files are shown in local time.</p>
       <div class="result-tools">
+        <button id="rename-source" class="secondary" type="button">Rename selected source</button>
         <button id="merge-sources" class="secondary" type="button">Merge selected sources</button>
         <button id="delete-sources" class="secondary" type="button">Archive selected sources</button>
+        <span id="rename-source-feedback" class="copy-feedback"></span>
         <span id="merge-sources-feedback" class="copy-feedback"></span>
         <span id="delete-sources-feedback" class="copy-feedback"></span>
       </div>
@@ -706,6 +722,8 @@ function renderHtml() {
     const tabs = document.querySelectorAll(".tab");
     const filesBody = document.querySelector("#files-body");
     const archivesBody = document.querySelector("#archives-body");
+    const renameSourceButton = document.querySelector("#rename-source");
+    const renameSourceFeedback = document.querySelector("#rename-source-feedback");
     const mergeSourcesButton = document.querySelector("#merge-sources");
     const mergeSourcesFeedback = document.querySelector("#merge-sources-feedback");
     const deleteSourcesButton = document.querySelector("#delete-sources");
@@ -836,6 +854,7 @@ function renderHtml() {
     copyLocal.addEventListener("click", () => copyResult(localAnswer, filterStructuralMarkdown(lastLocalMarkdown, localHiddenSections()), localCopyFormat.value, localCopyFeedback));
     clearChat.addEventListener("click", () => clearChatResult());
     clearLocal.addEventListener("click", () => clearLocalResult());
+    renameSourceButton.addEventListener("click", renameSelectedSource);
     mergeSourcesButton.addEventListener("click", mergeSelectedSources);
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
@@ -981,6 +1000,42 @@ function renderHtml() {
       }
     }
 
+    async function renameSelectedSource() {
+      const selected = selectedSourceItems();
+      if (selected.length !== 1) {
+        renameSourceFeedback.textContent = "Select exactly one source";
+        setTimeout(() => { renameSourceFeedback.textContent = ""; }, 1800);
+        return;
+      }
+      const current = selected[0].sourcePage || selected[0].file || "source";
+      const title = window.prompt("New source title", titleFromPath(current));
+      if (!title) return;
+      renameSourceButton.disabled = true;
+      renameSourceFeedback.textContent = "Renaming...";
+      try {
+        const response = await fetch("/api/rename-source", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...selected[0], title })
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        const changed = [
+          data.result.raw?.to,
+          data.result.sourcePage?.to
+        ].filter(Boolean).join(", ");
+        renameSourceFeedback.textContent = changed ? "Renamed to " + changed : "Rename completed";
+        await loadFiles();
+        loadTopics();
+        loadSideTopics();
+      } catch (error) {
+        renameSourceFeedback.textContent = error.message;
+      } finally {
+        renameSourceButton.disabled = false;
+        setTimeout(() => { renameSourceFeedback.textContent = ""; }, 3600);
+      }
+    }
+
     async function mergeSelectedSources() {
       const selected = selectedSourceItems();
       if (selected.length < 2) {
@@ -1032,6 +1087,11 @@ function renderHtml() {
         file: item.dataset.file,
         sourcePage: item.dataset.sourcePage
       }));
+    }
+
+    function titleFromPath(value) {
+      const base = String(value).split("/").pop().replace(/\\.[^.]+$/, "").replace(/^\\d{4}-\\d{2}-\\d{2}--/, "");
+      return base.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") || "Renamed source";
     }
 
     async function loadArchives() {

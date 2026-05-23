@@ -142,6 +142,14 @@ Every generated wiki page should include YAML frontmatter with \`type\`, \`statu
 
 Use source-backed claims and Obsidian wiki links. Never present an inference as a source fact.
 
+## Language Rules
+
+- Detect each source's primary language.
+- Write generated source-page content in the source's primary language, including summaries, key points, open questions, contradictions, and learning Q/A.
+- If a source is meaningfully multilingual, preserve the source languages where they carry meaning.
+- Keep stable schema headings such as \`Summary\`, \`Key Points\`, and \`Open Questions\` unchanged unless the user explicitly changes the schema.
+- Add or preserve a \`language\` frontmatter value when generating source pages.
+
 ${learningSectionsTemplate()}
 
 ## Ingest Workflow

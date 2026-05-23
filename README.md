@@ -47,7 +47,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - Provides Chat, Local Search, Files, Archive, Topics, Provider, and Notes tabs.
 - Provides a right-side topic explorer that filters by title, tag, wiki element, and updated date.
 - Lets useful chat answers be saved back as raw sources.
-- Supports source merge, archive/restore, and permanent archive deletion.
+- Supports source rename, merge, archive/restore, and permanent archive deletion.
 - Stores user notes inside related markdown files and shows note indicators in results.
 - Runs as a native macOS app with a menu bar icon and a local webview UI.
 
@@ -201,6 +201,19 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 9. Use Provider to inspect safe provider status without exposing secrets.
 
 Useful chat answers can be saved back into `raw/input/` and ingested like any other source.
+
+Processed source language:
+
+- The agent detects each source's primary language.
+- Generated source-page content is written in that source language where possible.
+- Stable schema headings stay consistent so the app can parse sections reliably.
+
+The Files tab can rename processed sources:
+
+- Select exactly one source.
+- Click `Rename selected source`.
+- Enter the new title.
+- The app renames the raw source file and source page when present, updates `source_path`, updates wiki links/references, refreshes the index mapping, and appends a maintenance log entry.
 
 The Files tab can merge processed sources:
 

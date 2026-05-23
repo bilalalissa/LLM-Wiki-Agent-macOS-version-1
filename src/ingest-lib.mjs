@@ -212,6 +212,12 @@ async function analyzeMediaSource(provider, input) {
 
 Analyze this local media source for wiki ingest.
 
+Language rule:
+- Detect the source's primary language from visible text, audio transcript, metadata, or user-provided text.
+- Write generated content values in that same primary language when the content is known.
+- If the source is meaningfully multilingual, preserve the source languages where they carry meaning.
+- Keep JSON keys exactly as requested.
+
 Media title: ${input.sourceTitle}
 Media kind: ${input.media.kind}
 Media file path: ${input.assetPath}
@@ -222,6 +228,7 @@ If you can inspect the local media file, extract visible/audible/document insigh
 
 Return strict JSON with this shape:
 {
+  "language": "detected primary language or multilingual",
   "summary": "short paragraph",
   "key_points": ["durable point"],
   "concepts": [{"name": "Concept Name", "summary": "one sentence"}],
@@ -235,7 +242,7 @@ Return strict JSON with this shape:
 
   try {
     const text = await provider.complete([
-      { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent visual, audio, or document facts." },
+      { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent visual, audio, or document facts. Write generated content in the source's primary language when the content is known." },
       { role: "user", content: prompt }
     ], { allowTools: true });
     return parseMediaJson(text, input.media);
@@ -249,6 +256,7 @@ function parseMediaJson(text, media) {
   const raw = JSON.parse(cleaned);
   const parsed = {
     summary: String(raw.summary || ""),
+    language: String(raw.language || ""),
     key_points: asArray(raw.key_points),
     concepts: asArray(raw.concepts).map(normalizeNamed),
     entities: asArray(raw.entities).map(normalizeNamed),
@@ -268,6 +276,7 @@ function parseMediaJson(text, media) {
 function fallbackMediaAnalysis(media, error) {
   return {
     summary: `${media.kind} source preserved as a local asset. The configured provider did not return a media analysis, so this page records metadata and keeps the source available for later review.`,
+    language: "unknown",
     key_points: [
       `Local asset path: ${media.assetRel}.`,
       `Media kind: ${media.kind}.`,
@@ -364,8 +373,15 @@ ${input.index}
 Source path: ${input.sourcePath}
 Source title: ${input.sourceTitle}
 
+Language rule:
+- Detect the source's primary language from the text.
+- Write generated content values in that same primary language.
+- If the source is meaningfully multilingual, preserve the source languages where they carry meaning.
+- Keep JSON keys exactly as requested.
+
 Return strict JSON with this shape:
 {
+  "language": "detected primary language or multilingual",
   "summary": "short paragraph",
   "key_points": ["durable point"],
   "concepts": [{"name": "Concept Name", "summary": "one sentence"}],
@@ -380,7 +396,7 @@ Source text:
 ${input.sourceText}`;
 
   const text = await provider.complete([
-    { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent facts." },
+    { role: "system", content: "Return only valid JSON. Preserve source traceability. Do not invent facts. Write generated content in the source's primary language unless the source is meaningfully multilingual." },
     { role: "user", content: prompt }
   ]);
   return parseJson(text);
@@ -391,6 +407,7 @@ function parseJson(text) {
   const data = JSON.parse(cleaned);
   return {
     summary: String(data.summary || ""),
+    language: String(data.language || ""),
     key_points: asArray(data.key_points),
     concepts: asArray(data.concepts).map(normalizeNamed),
     entities: asArray(data.entities).map(normalizeNamed),
@@ -434,6 +451,7 @@ type: source
 status: active
 created: ${date}
 updated: ${date}
+language: ${yamlScalar(analysis.language || "unknown")}
 source_path: ${processedRel}
 sources: []
 tags:
@@ -484,6 +502,7 @@ type: source
 status: active
 created: ${date}
 updated: ${date}
+language: ${yamlScalar(analysis.language || "unknown")}
 source_path: ${assetRel}
 media_kind: ${mediaKind}
 media_analyzed: ${analysis.analyzed ? "true" : "false"}
@@ -721,6 +740,10 @@ function pad(value) {
 
 function bulletList(items) {
   return items.length ? items.map((item) => `- ${item}`).join("\n") : "- ";
+}
+
+function yamlScalar(value) {
+  return JSON.stringify(String(value || "unknown"));
 }
 
 function escapePipe(text) {
