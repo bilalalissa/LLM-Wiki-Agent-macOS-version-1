@@ -131,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
         let windowMenuItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(menuItem("New App Window", #selector(openNewAppWindow), "n"))
         windowMenu.addItem(menuItem("Close Window", #selector(closeWindowCommand), "w"))
         windowMenuItem.submenu = windowMenu
         mainMenu.addItem(windowMenuItem)
@@ -228,6 +229,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     @objc private func closeWindowCommand() {
         _ = windowShouldClose(window)
+    }
+
+    @objc private func openNewAppWindow() {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "snap")
+        let secondaryWebView = WKWebView(frame: .zero, configuration: configuration)
+        secondaryWebView.navigationDelegate = self
+        secondaryWebView.uiDelegate = self
+        secondaryWebView.loadHTMLString(statusHTML("Opening LLM Wiki Agent", "Loading the local wiki server..."), baseURL: nil)
+
+        let secondaryWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        secondaryWindow.title = "LLM Wiki Agent"
+        secondaryWindow.center()
+        secondaryWindow.contentView = secondaryWebView
+        secondaryWindow.makeKeyAndOrderFront(nil)
+        childWindows.append(secondaryWindow)
+
+        if let url = URL(string: "http://127.0.0.1:\(port)/?window=secondary&t=\(Date().timeIntervalSince1970)") {
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+            request.timeoutInterval = 4
+            secondaryWebView.load(request)
+        }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        updateMenuStates()
     }
 
     @objc private func quit() {

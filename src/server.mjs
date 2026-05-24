@@ -2681,14 +2681,13 @@ function renderHelpMedia(file, media) {
     video, img { width: 100%; max-height: calc(100vh - 190px); object-fit: contain; background: #111; }
     audio { width: min(720px, 100%); }
     .meta { color: var(--muted); margin: 12px 0 0; }
-    .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
   </style>
 </head>
 <body>
   <main>
     <nav>
       <div class="actions">
-        <a href="/help">Back to Help</a>
         <a href="${src}" target="_blank" rel="noopener">Open raw media</a>
       </div>
       <h1>${serverEscapeHtml(title)}</h1>
