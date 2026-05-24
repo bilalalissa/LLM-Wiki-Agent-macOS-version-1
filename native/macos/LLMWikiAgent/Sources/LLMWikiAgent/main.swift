@@ -3,7 +3,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
@@ -12,9 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var dockIconItem: NSMenuItem!
     private var closeBehaviorItem: NSMenuItem!
     private var setupAlertItem: NSMenuItem!
+    private var snapWindows: [NSWindow] = []
+    private var snapSparkTimer: Timer?
+    private weak var snapBoxView: NSView?
+    private weak var snapTextView: NSTextView?
     private let closeBehaviorKey = "closeButtonKeepsRunning"
     private let hideSetupAlertKey = "hideSetupRequiredOnStartup"
     private let configPathKey = "configFilePath"
+    private let snapSizeKey = "snapTextSize"
     private let port = "8789"
     private var appSupport: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -37,11 +42,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        closeNativeSnap()
         serverProcess?.terminate()
     }
 
     private func makeWindow() {
-        webView = WKWebView(frame: .zero)
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "snap")
+        webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.loadHTMLString(statusHTML("Starting LLM Wiki Agent", "Starting the local wiki server..."), baseURL: nil)
@@ -56,6 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         window.center()
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "snap",
+              let body = message.body as? [String: Any],
+              let text = body["text"] as? String else { return }
+        let bodySize = body["size"] as? Double
+        let storedSize = UserDefaults.standard.double(forKey: snapSizeKey)
+        showNativeSnap(text: text, size: CGFloat(bodySize ?? (storedSize > 0 ? storedSize : 34)))
     }
 
     private func installStatusItem() {
@@ -424,6 +441,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         panel.beginSheetModal(for: window) { response in
             completionHandler(response == .OK ? panel.urls : nil)
         }
+    }
+
+    private func showNativeSnap(text: String, size: CGFloat) {
+        closeNativeSnap()
+        let borderColor = randomSparkColor()
+        for (index, screen) in NSScreen.screens.enumerated() {
+            let overlay = NSWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            overlay.level = .screenSaver
+            overlay.backgroundColor = NSColor.black.withAlphaComponent(0.76)
+            overlay.isOpaque = false
+            overlay.ignoresMouseEvents = index != 0
+            overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            overlay.contentView = NSView(frame: screen.frame)
+            if index == 0 {
+                addSnapBox(to: overlay, text: text, size: size, borderColor: borderColor)
+            }
+            overlay.makeKeyAndOrderFront(nil)
+            snapWindows.append(overlay)
+        }
+        snapSparkTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
+            self?.sparkSnapBorder()
+        }
+    }
+
+    private func addSnapBox(to window: NSWindow, text: String, size: CGFloat, borderColor: NSColor) {
+        guard let content = window.contentView else { return }
+        let width = min(window.frame.width * 0.82, 980)
+        let height = min(window.frame.height * 0.72, 620)
+        let box = NSView(frame: NSRect(x: (window.frame.width - width) / 2, y: (window.frame.height - height) / 2, width: width, height: height))
+        box.wantsLayer = true
+        box.layer?.backgroundColor = NSColor(red: 0.02, green: 0.03, blue: 0.06, alpha: 1).cgColor
+        box.layer?.borderWidth = 3
+        box.layer?.borderColor = borderColor.cgColor
+        box.layer?.cornerRadius = 10
+        box.layer?.shadowColor = borderColor.cgColor
+        box.layer?.shadowOpacity = 0.85
+        box.layer?.shadowRadius = 28
+        box.layer?.shadowOffset = .zero
+
+        let close = NSButton(title: "Close", target: self, action: #selector(closeNativeSnapAction))
+        close.frame = NSRect(x: width - 96, y: height - 46, width: 72, height: 30)
+        box.addSubview(close)
+
+        let slider = NSSlider(value: Double(size), minValue: 24, maxValue: 84, target: self, action: #selector(snapSliderChanged(_:)))
+        slider.frame = NSRect(x: 92, y: height - 44, width: 260, height: 24)
+        box.addSubview(slider)
+        let label = NSTextField(labelWithString: "Size")
+        label.textColor = NSColor(calibratedWhite: 0.86, alpha: 1)
+        label.frame = NSRect(x: 32, y: height - 42, width: 48, height: 20)
+        box.addSubview(label)
+
+        let scroll = NSScrollView(frame: NSRect(x: 28, y: 28, width: width - 56, height: height - 92))
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        let textView = NSTextView(frame: scroll.bounds)
+        textView.isEditable = false
+        textView.drawsBackground = false
+        textView.textColor = .white
+        textView.font = NSFont.systemFont(ofSize: size, weight: .bold)
+        textView.string = text
+        textView.textContainerInset = NSSize(width: 10, height: 10)
+        scroll.documentView = textView
+        box.addSubview(scroll)
+        snapTextView = textView
+        snapBoxView = box
+        content.addSubview(box)
+    }
+
+    @objc private func snapSliderChanged(_ sender: NSSlider) {
+        let size = CGFloat(sender.doubleValue)
+        UserDefaults.standard.set(Double(size), forKey: snapSizeKey)
+        snapTextView?.font = NSFont.systemFont(ofSize: size, weight: .bold)
+    }
+
+    @objc private func closeNativeSnapAction() {
+        closeNativeSnap()
+    }
+
+    private func closeNativeSnap() {
+        snapSparkTimer?.invalidate()
+        snapSparkTimer = nil
+        snapWindows.forEach { $0.close() }
+        snapWindows = []
+        snapBoxView = nil
+        snapTextView = nil
+    }
+
+    private func sparkSnapBorder() {
+        let color = randomSparkColor()
+        snapBoxView?.layer?.borderColor = color.cgColor
+        snapBoxView?.layer?.shadowColor = color.cgColor
+    }
+
+    private func randomSparkColor() -> NSColor {
+        let colors: [NSColor] = [
+            NSColor.systemCyan,
+            NSColor.systemBlue,
+            NSColor.systemPurple,
+            NSColor.systemPink,
+            NSColor.systemYellow,
+            NSColor.white
+        ]
+        return colors.randomElement() ?? .systemCyan
     }
 
     private func statusHTML(_ title: String, _ message: String) -> String {

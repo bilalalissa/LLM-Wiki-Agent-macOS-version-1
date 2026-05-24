@@ -501,15 +501,12 @@ function renderHtml() {
     th.sortable.sort-asc::after { content: " ↑"; color: var(--accent); }
     th.sortable.sort-desc::after { content: " ↓"; color: var(--accent); }
     .result-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; margin: -4px 0 8px; }
-    .panel.active > form,
-    .panel.active > .result-tools,
-    .panel.active > .table-controls,
-    .panel.active > .config-path-row { position: sticky; top: 48px; z-index: 14; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); padding: 6px; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 18px var(--shadow); }
-    .panel.active > form + .result-tools,
-    .panel.active > .local-display-tools,
-    .panel.active > p + .result-tools,
-    .panel.active > .config-path-row { top: 102px; }
-    #local-panel.panel.active > .result-tools:not(.local-display-tools):last-of-type { top: 150px; }
+    .sticky-controls { position: sticky; top: 48px; z-index: 14; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); padding: 8px; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 18px var(--shadow); margin-bottom: 12px; }
+    .sticky-controls form, .sticky-controls .result-tools, .sticky-controls .table-controls { position: static; flex: 1 1 auto; margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+    .sticky-controls .result-tools { justify-content: flex-start; }
+    .sticky-controls .table-controls { display: flex; flex-wrap: wrap; }
+    .sticky-controls .table-controls input { flex: 1 1 260px; }
+    .sticky-controls .table-controls select { flex: 0 1 180px; }
     .copy-feedback { color: var(--muted); font-size: 13px; min-width: 54px; }
     .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; }
     .answer p { margin: 0 0 12px; }
@@ -563,12 +560,12 @@ function renderHtml() {
     .status-dot.grey { background: #9ca3af; }
     .selection-toolbar { position: fixed; display: none; z-index: 20; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
     .snap-overlay { position: fixed; inset: 0; display: none; z-index: 40; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.76); padding: 32px; box-sizing: border-box; }
-    .snap-box { width: min(920px, 92vw); max-height: 82vh; overflow: auto; background: #05070c; color: #f8fbff; border: 2px solid #70e6ff; border-radius: 8px; padding: 28px; box-shadow: 0 0 28px rgba(57, 213, 255, 0.55), inset 0 0 18px rgba(255, 255, 255, 0.08); animation: snap-spark 1.2s linear infinite; }
+    .snap-box { width: min(920px, 92vw); max-height: 82vh; overflow: auto; background: #05070c; color: #f8fbff; border: 2px solid var(--snap-border, #70e6ff); border-radius: 8px; padding: 28px; box-shadow: 0 0 28px color-mix(in srgb, var(--snap-border, #70e6ff) 60%, transparent), inset 0 0 18px rgba(255, 255, 255, 0.08); animation: snap-spark 1.2s linear infinite; }
     .snap-text { white-space: pre-wrap; line-height: 1.45; font-size: var(--snap-size, 34px); font-weight: 750; letter-spacing: 0; }
     .snap-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: #d8f7ff; }
     .snap-controls input { flex: 0 1 260px; accent-color: #70e6ff; }
     @keyframes snap-spark {
-      0%, 100% { border-color: #70e6ff; box-shadow: 0 0 20px rgba(57, 213, 255, 0.45), inset 0 0 18px rgba(255, 255, 255, 0.08); }
+      0%, 100% { border-color: var(--snap-border, #70e6ff); box-shadow: 0 0 20px color-mix(in srgb, var(--snap-border, #70e6ff) 50%, transparent), inset 0 0 18px rgba(255, 255, 255, 0.08); }
       50% { border-color: #ffffff; box-shadow: 0 0 36px rgba(255, 255, 255, 0.72), 0 0 54px rgba(57, 213, 255, 0.38), inset 0 0 24px rgba(112, 230, 255, 0.12); }
     }
     .note-editor { display: none; position: fixed; z-index: 21; width: min(460px, calc(100vw - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; }
@@ -643,52 +640,54 @@ function renderHtml() {
       <div id="answer" class="answer">Ready.</div>
     </section>
     <section id="local-panel" class="panel">
-      <form id="local-form">
-        <input id="local-question" autocomplete="off" placeholder="Ask locally without AI or internet">
-        <button id="local-ask" class="primary" type="submit">Search</button>
-        <button id="clear-local" class="secondary" type="button">Clear</button>
-      </form>
       <p class="muted">Local mode searches stored wiki markdown only. It does not call an AI provider and does not connect to the internet.</p>
-      <div class="result-tools local-display-tools">
-        <label class="muted" for="local-result-view">View</label>
-        <select id="local-result-view">
-          <option value="combined">Tree + accordion</option>
-          <option value="accordion">Accordion</option>
-          <option value="plain">Plain</option>
-        </select>
-        <label class="muted" for="local-result-expand">Start</label>
-        <select id="local-result-expand">
-          <option value="first">First result expanded</option>
-          <option value="collapsed">Collapsed</option>
-          <option value="expanded">Expanded</option>
-        </select>
-      </div>
-      <div class="result-tools">
-        <select id="local-copy-format">
-          <option value="text">Pure text</option>
-          <option value="html">Formatted text</option>
-          <option value="markdown">Markdown</option>
-        </select>
-        <button id="copy-local" class="secondary" type="button">Copy</button>
-        <span id="local-copy-feedback" class="copy-feedback"></span>
+      <div class="sticky-controls">
+        <form id="local-form">
+          <input id="local-question" autocomplete="off" placeholder="Ask locally without AI or internet">
+          <button id="local-ask" class="primary" type="submit">Search</button>
+          <button id="clear-local" class="secondary" type="button">Clear</button>
+        </form>
+        <div class="result-tools local-display-tools">
+          <label class="muted" for="local-result-view">View</label>
+          <select id="local-result-view">
+            <option value="combined">Tree + accordion</option>
+            <option value="accordion">Accordion</option>
+            <option value="plain">Plain</option>
+          </select>
+          <label class="muted" for="local-result-expand">Start</label>
+          <select id="local-result-expand">
+            <option value="first">First result expanded</option>
+            <option value="collapsed">Collapsed</option>
+            <option value="expanded">Expanded</option>
+          </select>
+          <select id="local-copy-format">
+            <option value="text">Pure text</option>
+            <option value="html">Formatted text</option>
+            <option value="markdown">Markdown</option>
+          </select>
+          <button id="copy-local" class="secondary" type="button">Copy</button>
+          <span id="local-copy-feedback" class="copy-feedback"></span>
+        </div>
       </div>
       <div id="local-answer" class="answer">Ready for local search.</div>
     </section>
     <section id="files-panel" class="panel">
       <p class="muted">Received and processed files are shown in local time.</p>
-      <div class="result-tools">
-        <button id="rename-source" class="secondary" type="button">Rename selected source</button>
-        <button id="merge-sources" class="secondary" type="button">Merge selected sources</button>
-        <button id="delete-sources" class="secondary" type="button">Archive selected sources</button>
-        <span id="rename-source-feedback" class="copy-feedback"></span>
-        <span id="merge-sources-feedback" class="copy-feedback"></span>
-        <span id="delete-sources-feedback" class="copy-feedback"></span>
-      </div>
-      <div class="table-controls">
-        <input id="files-filter" autocomplete="off" placeholder="Filter files">
-        <select id="files-vault-filter"><option value="">All vaults</option></select>
-        <select id="files-status-filter"><option value="">All statuses</option></select>
-        <button id="files-clear-filter" class="secondary" type="button">Clear</button>
+      <div class="sticky-controls">
+        <div class="result-tools">
+          <button id="rename-source" class="secondary" type="button">Rename selected source</button>
+          <button id="merge-sources" class="secondary" type="button">Merge selected sources</button>
+          <button id="delete-sources" class="secondary" type="button">Archive selected sources</button>
+          <span id="rename-source-feedback" class="copy-feedback"></span>
+          <span id="merge-sources-feedback" class="copy-feedback"></span>
+          <span id="delete-sources-feedback" class="copy-feedback"></span>
+        </div>
+        <div class="table-controls">
+          <input id="files-filter" autocomplete="off" placeholder="Filter files">
+          <select id="files-vault-filter"><option value="">All vaults</option></select>
+          <select id="files-status-filter"><option value="">All statuses</option></select>
+          <button id="files-clear-filter" class="secondary" type="button">Clear</button>
+        </div>
       </div>
       <table>
         <thead>
@@ -709,17 +708,19 @@ function renderHtml() {
     </section>
     <section id="archives-panel" class="panel">
       <p class="muted">Archived raw sources and archived wiki pages. These are removed from active wiki navigation but preserved on disk.</p>
-      <div class="result-tools">
-        <button id="restore-archives" class="secondary" type="button">Restore selected archived items</button>
-        <button id="delete-archives" class="secondary" type="button">Delete selected archived items</button>
-        <span id="restore-archives-feedback" class="copy-feedback"></span>
-        <span id="delete-archives-feedback" class="copy-feedback"></span>
-      </div>
-      <div class="table-controls">
-        <input id="archives-filter" autocomplete="off" placeholder="Filter archives">
-        <select id="archives-vault-filter"><option value="">All vaults</option></select>
-        <select id="archives-kind-filter"><option value="">All types</option></select>
-        <button id="archives-clear-filter" class="secondary" type="button">Clear</button>
+      <div class="sticky-controls">
+        <div class="result-tools">
+          <button id="restore-archives" class="secondary" type="button">Restore selected archived items</button>
+          <button id="delete-archives" class="secondary" type="button">Delete selected archived items</button>
+          <span id="restore-archives-feedback" class="copy-feedback"></span>
+          <span id="delete-archives-feedback" class="copy-feedback"></span>
+        </div>
+        <div class="table-controls">
+          <input id="archives-filter" autocomplete="off" placeholder="Filter archives">
+          <select id="archives-vault-filter"><option value="">All vaults</option></select>
+          <select id="archives-kind-filter"><option value="">All types</option></select>
+          <button id="archives-clear-filter" class="secondary" type="button">Clear</button>
+        </div>
       </div>
       <table>
         <thead>
@@ -779,14 +780,16 @@ function renderHtml() {
     </section>
     <section id="notes-panel" class="panel">
       <p class="muted">User notes added from highlighted answer text. Notes are also written into markdown files for Obsidian.</p>
+      <div class="sticky-controls">
       <div class="result-tools">
         <label class="muted" for="note-display-mode">Hover note display</label>
         <select id="note-display-mode">
           <option value="box">Note box</option>
           <option value="tooltip">Browser tooltip</option>
         </select>
-      </div>
       <button id="refresh-notes" class="secondary" type="button">Refresh</button>
+      </div>
+      </div>
       <div id="notes-list" class="notes-list">Loading...</div>
     </section>
   </main>
@@ -1954,11 +1957,23 @@ function renderHtml() {
     function showSnap() {
       const text = selectedInfo?.text || window.getSelection()?.toString()?.trim() || "";
       if (!text) return;
+      if (window.webkit?.messageHandlers?.snap) {
+        window.webkit.messageHandlers.snap.postMessage({ text, size: Number(snapSize.value || 34) });
+        clearTextSelection();
+        hideSelectionTools();
+        return;
+      }
       snapText.textContent = text;
       snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
+      snapOverlay.style.setProperty("--snap-border", randomSnapColor());
       snapOverlay.style.display = "flex";
       clearTextSelection();
       hideSelectionTools();
+    }
+
+    function randomSnapColor() {
+      const colors = ["#70e6ff", "#ffffff", "#f9e85d", "#ff64c8", "#8b5cf6", "#22c55e"];
+      return colors[Math.floor(Math.random() * colors.length)];
     }
 
     function closeSnap() {

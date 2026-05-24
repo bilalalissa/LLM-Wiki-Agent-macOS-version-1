@@ -215,8 +215,9 @@ Focused reading:
 
 - The tab row stays fixed while scrolling.
 - Active tab controls stay near the top in compact form.
-- Select result text and click `Snap` to dim the app and show the selected text in a magnified focus box.
+- Select result text and click `Snap` to dim the screen and show the selected text in a magnified focus box.
 - Use the Snap size slider to control magnification. The size preference is saved on the device.
+- In the macOS app, Snap uses a native overlay; in browser fallback mode, it dims the app page.
 
 Adding notes from Chat or Local results:
 
