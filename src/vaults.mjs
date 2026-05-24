@@ -40,12 +40,15 @@ export function ensureDir(dir) {
 }
 
 export function slugify(input) {
-  return input
+  return String(input || "")
+    .normalize("NFC")
     .toLowerCase()
     .replace(/['"]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[\/\\:*?"<>|\u0000-\u001f]+/g, "-")
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "untitled";
+    .slice(0, 80)
+    .replace(/^-+|-+$/g, "") || "untitled";
 }
 
 export function today() {
