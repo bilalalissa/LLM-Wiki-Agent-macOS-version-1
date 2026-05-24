@@ -603,9 +603,12 @@ function renderHtml() {
     .sticky-controls .table-controls input { flex: 1 1 260px; }
     .sticky-controls .table-controls select { flex: 0 1 180px; }
     .copy-feedback { color: var(--muted); font-size: 13px; min-width: 54px; }
-    .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; }
+    .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; direction: auto; text-align: start; }
+    .answer [dir="auto"], .answer [dir="rtl"], .answer [dir="ltr"] { text-align: start; }
+    .answer[dir="rtl"], .answer [dir="rtl"] { padding-inline-start: 0; padding-inline-end: 24px; }
     .answer p { margin: 0 0 12px; }
     .answer ul, .answer ol { margin-top: 0; padding-left: 24px; }
+    .answer ul[dir="rtl"], .answer ol[dir="rtl"], .answer [dir="rtl"] ul, .answer [dir="rtl"] ol { padding-left: 0; padding-right: 24px; }
     .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
     .local-display-tools { justify-content: flex-start; margin-top: 0; }
     .local-tree { display: grid; gap: 10px; }
@@ -614,6 +617,11 @@ function renderHtml() {
     details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
     details.local-result > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
     .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; }
+    .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .local-result-title { min-width: 0; }
+    .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+    .dir-button { font: inherit; font-size: 11px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 3px 6px; cursor: pointer; }
+    .dir-button:hover, .dir-button.active { color: var(--text); border-color: var(--accent); background: var(--soft); }
     .local-result-count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 6px; }
     mark.agent-highlight { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 2px; }
     .note-anchor { color: inherit; }
@@ -1103,6 +1111,7 @@ function renderHtml() {
         const data = await response.json();
         lastChatMarkdown = data.answer || data.error || "No answer.";
         answer.innerHTML = renderMarkdown(lastChatMarkdown);
+        applyAutoDirection(answer);
         selectCitedVault(lastChatMarkdown);
         applyNoteAnnotations(answer);
       } catch (error) {
@@ -1845,8 +1854,22 @@ function renderHtml() {
       } else {
         localAnswer.innerHTML = renderLocalStructured(lastLocalMarkdown);
       }
+      applyAutoDirection(localAnswer);
       applyNoteAnnotations(localAnswer);
     }
+
+    localAnswer.addEventListener("click", (event) => {
+      const button = event.target.closest?.(".dir-button");
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const details = button.closest(".local-result");
+      const dir = button.dataset.dir || "auto";
+      if (!details) return;
+      details.querySelectorAll(".dir-button").forEach((item) => item.classList.toggle("active", item === button));
+      details.querySelector(".local-result-body")?.setAttribute("dir", dir);
+      details.querySelector(".local-result-title")?.setAttribute("dir", dir);
+    });
 
     function renderLocalStructured(markdown) {
       const parsed = parseLocalResults(markdown);
@@ -1932,11 +1955,27 @@ function renderHtml() {
       const open = shouldOpenLocalResult(index) ? " open" : "";
       const snippets = result.snippets.length ? result.snippets : ["No snippet available."];
       return '<details class="local-result"' + open + '>' +
-        '<summary>' + escapeHtml(result.title) + '</summary>' +
-        '<div class="local-result-body">' +
-        (result.ref ? '<p class="source-ref">' + inlineMarkdown(result.ref) + '</p>' : '') +
-        '<ul>' + snippets.map((snippet) => '<li>' + inlineMarkdown(snippet) + '</li>').join("") + '</ul>' +
+        '<summary><span class="local-result-heading"><span class="local-result-title" dir="auto">' + escapeHtml(result.title) + '</span>' + renderDirectionControls() + '</span></summary>' +
+        '<div class="local-result-body" dir="auto">' +
+        (result.ref ? '<p class="source-ref" dir="ltr">' + inlineMarkdown(result.ref) + '</p>' : '') +
+        '<ul>' + snippets.map((snippet) => '<li dir="auto">' + inlineMarkdown(snippet) + '</li>').join("") + '</ul>' +
         '</div></details>';
+    }
+
+    function renderDirectionControls() {
+      return '<span class="dir-controls" aria-label="Text direction">' +
+        '<button class="dir-button active" type="button" data-dir="auto" title="Auto direction">Auto</button>' +
+        '<button class="dir-button" type="button" data-dir="rtl" title="Right to left">RTL</button>' +
+        '<button class="dir-button" type="button" data-dir="ltr" title="Left to right">LTR</button>' +
+      '</span>';
+    }
+
+    function applyAutoDirection(root) {
+      root.setAttribute("dir", "auto");
+      root.style.textAlign = "start";
+      root.querySelectorAll("p, li, h1, h2, h3, h4, summary, .local-result-body, .local-result-title").forEach((node) => {
+        if (!node.hasAttribute("dir")) node.setAttribute("dir", "auto");
+      });
     }
 
     function shouldOpenLocalResult(index) {

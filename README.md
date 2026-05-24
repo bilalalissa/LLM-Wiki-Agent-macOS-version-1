@@ -213,6 +213,7 @@ Local result display options:
 - `Accordion` shows a flatter list of expandable results.
 - `Plain` shows the original rendered markdown answer.
 - `Start` controls whether results begin collapsed, expanded, or with only the first result expanded.
+- Rendered answers use automatic text direction for mixed Arabic/English content. Each Local accordion result also has `Auto`, `RTL`, and `LTR` controls for manual direction alignment.
 
 The Local display preference is saved on the device.
 
