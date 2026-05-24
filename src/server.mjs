@@ -605,7 +605,7 @@ function renderHtml() {
           <option value="contrast">Contrast</option>
           <option value="megatron">Megatron</option>
         </select>
-        <a class="help" href="/help" target="_blank" rel="noreferrer">Help</a>
+        <a class="help" href="/help">Help</a>
       </div>
     </header>
     <nav class="tabs">
@@ -2517,22 +2517,32 @@ function renderHelp() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LLM Wiki Agent Help</title>
   <style>
-    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #18202b; }
+    :root { --bg: #f6f7f9; --text: #18202b; --panel: #ffffff; --line: #dce1e8; --soft: #eef2f7; --muted: #697386; --accent: #1f5eff; --accent-text: #ffffff; --shadow: rgba(20, 32, 50, 0.08); --code-bg: #edf2f7; --pre-bg: #f8fafc; }
+    body[data-theme="dark"] { --bg: #111827; --text: #e5e7eb; --panel: #1f2937; --line: #374151; --soft: #273449; --muted: #9ca3af; --accent: #60a5fa; --accent-text: #07111f; --shadow: rgba(0, 0, 0, 0.28); --code-bg: #111827; --pre-bg: #0f172a; }
+    body[data-theme="sepia"] { --bg: #f4ecd8; --text: #2f271f; --panel: #fffaf0; --line: #d8c7a3; --soft: #eadfca; --muted: #75664f; --accent: #8a5a19; --accent-text: #ffffff; --shadow: rgba(80, 58, 28, 0.12); --code-bg: #eadfca; --pre-bg: #fff5df; }
+    body[data-theme="forest"] { --bg: #edf5ef; --text: #10251a; --panel: #fbfffc; --line: #b8d0c0; --soft: #dcebe1; --muted: #55705f; --accent: #22734a; --accent-text: #ffffff; --shadow: rgba(24, 82, 53, 0.12); --code-bg: #dcebe1; --pre-bg: #f5fbf7; }
+    body[data-theme="contrast"] { --bg: #ffffff; --text: #000000; --panel: #ffffff; --line: #000000; --soft: #eeeeee; --muted: #333333; --accent: #000000; --accent-text: #ffffff; --shadow: rgba(0, 0, 0, 0.2); --code-bg: #eeeeee; --pre-bg: #ffffff; }
+    body[data-theme="megatron"] { --bg: #0b0d12; --text: #e8eef7; --panel: #161a23; --line: #3b4354; --soft: #222838; --muted: #9aa8bd; --accent: #39d5ff; --accent-text: #061019; --shadow: rgba(0, 0, 0, 0.36); --code-bg: #222838; --pre-bg: #0f131d; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
     main { max-width: 900px; margin: 0 auto; padding: 32px 20px 56px; }
-    article { background: white; border: 1px solid #dce1e8; border-radius: 6px; padding: 24px; line-height: 1.55; }
-    a { color: #1f5eff; }
-    code { background: #edf2f7; color: #172033; padding: 2px 5px; border-radius: 4px; }
-    pre { background: #f8fafc; color: #172033; border: 1px solid #cbd5e1; padding: 14px; border-radius: 6px; overflow: auto; }
+    article { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 24px; line-height: 1.55; box-shadow: 0 12px 30px var(--shadow); }
+    a { color: var(--accent); }
+    code { background: var(--code-bg); color: var(--text); padding: 2px 5px; border-radius: 4px; }
+    pre { background: var(--pre-bg); color: var(--text); border: 1px solid var(--line); padding: 14px; border-radius: 6px; overflow: auto; }
     pre code { background: transparent; color: inherit; padding: 0; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #dce1e8; padding: 8px; text-align: left; }
+    th, td { border: 1px solid var(--line); padding: 8px; text-align: left; }
+    .back { display: inline-block; margin-bottom: 14px; font-weight: 650; text-decoration: none; }
   </style>
 </head>
 <body>
   <main>
-    <p><a href="/">Back to agent</a></p>
+    <a class="back" href="/">Back to agent</a>
     <article>${markdownToHtml(markdown)}</article>
   </main>
+  <script>
+    document.body.dataset.theme = localStorage.getItem("llm-wiki-theme") || "light";
+  </script>
 </body>
 </html>`;
 }
