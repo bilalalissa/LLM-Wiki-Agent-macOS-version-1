@@ -1906,9 +1906,9 @@ function renderHtml() {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) return;
       const range = selection.getRangeAt(0);
-      const existing = closestHighlight(selection.anchorNode);
+      const existing = selectedHighlight(range) || closestHighlight(selection.anchorNode);
       if (existing) {
-        unwrap(existing);
+        unwrapHighlight(existing);
         selection.removeAllRanges();
         hideSelectionTools();
         return;
@@ -1920,8 +1920,7 @@ function renderHtml() {
       try {
         range.surroundContents(mark);
       } catch {
-        mark.textContent = selection.toString();
-        range.deleteContents();
+        mark.appendChild(range.extractContents());
         range.insertNode(mark);
       }
       selection.removeAllRanges();
@@ -2456,8 +2455,19 @@ function renderHtml() {
       return element?.closest?.("mark.agent-highlight");
     }
 
-    function unwrap(element) {
+    function selectedHighlight(range) {
+      const root = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+        ? range.commonAncestorContainer.parentElement
+        : range.commonAncestorContainer;
+      const direct = closestHighlight(range.startContainer) || closestHighlight(range.endContainer);
+      if (direct && range.intersectsNode(direct)) return direct;
+      return Array.from(root.querySelectorAll?.("mark.agent-highlight") || []).find((node) => range.intersectsNode(node)) || null;
+    }
+
+    function unwrapHighlight(element) {
+      if (!element?.matches?.("mark.agent-highlight")) return;
       const parent = element.parentNode;
+      if (!parent) return;
       while (element.firstChild) {
         parent.insertBefore(element.firstChild, element);
       }
