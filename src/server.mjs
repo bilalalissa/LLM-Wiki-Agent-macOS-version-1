@@ -611,7 +611,8 @@ function renderHtml() {
     .answer [data-align="left"] { text-align: left; }
     .answer p { margin: 0 0 12px; }
     .answer ul, .answer ol { margin-top: 0; padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
-    .local-result-body > ul { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; }
+    .local-result-body > ul { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; list-style-position: inside; padding-inline-start: 0; padding-inline-end: 0; }
+    .local-result-body > ul > li { margin: 0 0 4px; }
     .local-result-body[dir="rtl"] > ul, .local-result-body[data-align="right"] > ul { padding-inline-start: 0; padding-inline-end: 1.4em; list-style-position: inside; }
     .local-result-body[dir="ltr"] > ul, .local-result-body[data-align="left"] > ul { padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
     .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
