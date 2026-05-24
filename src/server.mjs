@@ -45,11 +45,23 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (request.method === "GET" && url.pathname.startsWith("/media/")) {
+  if (request.method === "GET" && url.pathname === "/help-media") {
+    try {
+      const file = url.searchParams.get("file") || "";
+      const media = resolveHelpMedia(file);
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(renderHelpMedia(file, media));
+    } catch {
+      response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+      response.end(renderNotFound("That README media file could not be found."));
+    }
+    return;
+  }
+
+  if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/media/")) {
     try {
       const media = resolveHelpMedia(url.pathname.slice("/media/".length));
-      response.writeHead(200, { "content-type": media.contentType });
-      fs.createReadStream(media.file).pipe(response);
+      serveMediaFile(request, response, media);
     } catch {
       response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
       response.end(renderNotFound("That README media file could not be found."));
@@ -269,8 +281,7 @@ const server = http.createServer(async (request, response) => {
       const vault = url.searchParams.get("vault") || "";
       const file = url.searchParams.get("file") || "";
       const media = resolveVaultMedia(config, vault, file);
-      response.writeHead(200, { "content-type": media.contentType });
-      fs.createReadStream(media.file).pipe(response);
+      serveMediaFile(request, response, media);
     } catch (error) {
       response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       response.end(error.message);
@@ -416,6 +427,55 @@ function resolveHelpMedia(file) {
     }
   }
   throw new Error("Media file not found.");
+}
+
+function serveMediaFile(request, response, media) {
+  const stat = fs.statSync(media.file);
+  const range = request.headers.range;
+  if (!range) {
+    response.writeHead(200, {
+      "content-type": media.contentType,
+      "content-length": stat.size,
+      "accept-ranges": "bytes"
+    });
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    fs.createReadStream(media.file).pipe(response);
+    return;
+  }
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+  if (!match) {
+    response.writeHead(416, {
+      "content-range": `bytes */${stat.size}`,
+      "accept-ranges": "bytes"
+    });
+    response.end();
+    return;
+  }
+  const start = match[1] ? Number(match[1]) : 0;
+  const end = match[2] ? Number(match[2]) : stat.size - 1;
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+    response.writeHead(416, {
+      "content-range": `bytes */${stat.size}`,
+      "accept-ranges": "bytes"
+    });
+    response.end();
+    return;
+  }
+  const safeEnd = Math.min(end, stat.size - 1);
+  response.writeHead(206, {
+    "content-type": media.contentType,
+    "content-length": safeEnd - start + 1,
+    "content-range": `bytes ${start}-${safeEnd}/${stat.size}`,
+    "accept-ranges": "bytes"
+  });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  fs.createReadStream(media.file, { start, end: safeEnd }).pipe(response);
 }
 
 function mediaContentType(file) {
@@ -2583,6 +2643,68 @@ function renderHelp() {
 </html>`;
 }
 
+function renderHelpMedia(file, media) {
+  const encodedFile = encodeURIComponent(file);
+  const src = `/media/${file.split("/").map(encodeURIComponent).join("/")}`;
+  const title = path.basename(media.file);
+  const contentType = media.contentType;
+  const isVideo = contentType.startsWith("video/");
+  const isAudio = contentType.startsWith("audio/");
+  const isImage = contentType.startsWith("image/");
+  const mediaMarkup = isVideo
+    ? `<video controls preload="metadata" src="${src}"></video>`
+    : isAudio
+      ? `<audio controls preload="metadata" src="${src}"></audio>`
+      : isImage
+        ? `<img src="${src}" alt="${serverEscapeHtml(title)}">`
+        : `<p>This media type may not preview in the app. Use the direct media link below.</p>`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${serverEscapeHtml(title)} - LLM Wiki Agent Help</title>
+  <style>
+    :root { --bg: #f6f7f9; --text: #18202b; --panel: #ffffff; --line: #dce1e8; --muted: #697386; --accent: #1f5eff; --shadow: rgba(20, 32, 50, 0.08); }
+    body[data-theme="dark"] { --bg: #111827; --text: #e5e7eb; --panel: #1f2937; --line: #374151; --muted: #9ca3af; --accent: #60a5fa; --shadow: rgba(0, 0, 0, 0.28); }
+    body[data-theme="sepia"] { --bg: #f4ecd8; --text: #2f271f; --panel: #fffaf0; --line: #d8c7a3; --muted: #75664f; --accent: #8a5a19; --shadow: rgba(80, 58, 28, 0.12); }
+    body[data-theme="forest"] { --bg: #edf5ef; --text: #10251a; --panel: #fbfffc; --line: #b8d0c0; --muted: #55705f; --accent: #22734a; --shadow: rgba(24, 82, 53, 0.12); }
+    body[data-theme="contrast"] { --bg: #ffffff; --text: #000000; --panel: #ffffff; --line: #000000; --muted: #333333; --accent: #000000; --shadow: rgba(0, 0, 0, 0.2); }
+    body[data-theme="megatron"] { --bg: #0b0d12; --text: #e8eef7; --panel: #161a23; --line: #3b4354; --muted: #9aa8bd; --accent: #39d5ff; --shadow: rgba(0, 0, 0, 0.36); }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 42px; }
+    nav { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+    a { color: var(--accent); font-weight: 700; text-decoration: none; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; box-shadow: 0 12px 30px var(--shadow); }
+    h1 { margin: 0; font-size: 20px; word-break: break-word; }
+    .viewer { display: grid; place-items: center; min-height: 540px; background: #111; border-radius: 6px; overflow: hidden; }
+    video, img { width: 100%; max-height: calc(100vh - 190px); object-fit: contain; background: #111; }
+    audio { width: min(720px, 100%); }
+    .meta { color: var(--muted); margin: 12px 0 0; }
+    .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <div class="actions">
+        <a href="/help">Back to Help</a>
+        <a href="${src}" target="_blank" rel="noopener">Open raw media</a>
+      </div>
+      <h1>${serverEscapeHtml(title)}</h1>
+    </nav>
+    <section class="panel">
+      <div class="viewer">${mediaMarkup}</div>
+      <p class="meta">If the preview does not play, use Open raw media. The app serves this file with byte-range support for WebKit playback.</p>
+    </section>
+  </main>
+  <script>
+    document.body.dataset.theme = localStorage.getItem("llm-wiki-theme") || "light";
+  </script>
+</body>
+</html>`;
+}
+
 function renderNotFound(message) {
   return `<!doctype html>
 <html lang="en">
@@ -2706,10 +2828,38 @@ function sanitizeHelpMarkdown(markdown) {
 
 function inline(text) {
   return serverEscapeHtml(text)
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<span class="muted">$1</span>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, href) => `<span class="muted">${alt}</span>`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => renderHelpLink(label, href))
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function renderHelpLink(label, href) {
+  const mediaHref = decodeHtmlEntities(href);
+  if (isHelpMediaLink(mediaHref)) {
+    return `<a href="/help-media?file=${encodeURIComponent(mediaHref.replace(/^media\//, ""))}" target="_blank" rel="noopener">${label}</a>`;
+  }
+  if (mediaHref.startsWith("#")) {
+    return `<a href="${href}">${label}</a>`;
+  }
+  if (mediaHref.startsWith("/") || mediaHref.startsWith("http://") || mediaHref.startsWith("https://")) {
+    return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+  }
+  return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+}
+
+function isHelpMediaLink(href) {
+  const normalized = String(href || "").toLowerCase();
+  return normalized.startsWith("media/") && /\.(png|jpe?g|gif|webp|svg|mp3|wav|m4a|aiff|mp4|mov|m4v|pdf)$/.test(normalized);
+}
+
+function decodeHtmlEntities(value) {
+  return String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
 function serverEscapeHtml(value) {

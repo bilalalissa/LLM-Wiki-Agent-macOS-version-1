@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var closeBehaviorItem: NSMenuItem!
     private var setupAlertItem: NSMenuItem!
     private var snapWindows: [NSWindow] = []
+    private var childWindows: [NSWindow] = []
     private weak var snapBoxView: NSView?
     private weak var snapTextView: NSTextView?
     private let closeBehaviorKey = "closeButtonKeepsRunning"
@@ -384,6 +385,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             return
         }
         webView.loadHTMLString(statusHTML("Could not load the app", error.localizedDescription), baseURL: nil)
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        let childWebView = WKWebView(frame: .zero, configuration: configuration)
+        childWebView.navigationDelegate = self
+        childWebView.uiDelegate = self
+        let childWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        childWindow.title = "LLM Wiki Agent"
+        childWindow.center()
+        childWindow.contentView = childWebView
+        childWindow.makeKeyAndOrderFront(nil)
+        childWindows.append(childWindow)
+        return childWebView
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
