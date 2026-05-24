@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         )
         window.title = "LLM Wiki Agent"
         window.delegate = self
+        window.isReleasedWhenClosed = false
         window.center()
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
@@ -237,7 +238,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func closeWindowCommand() {
-        closeActiveWindow()
+        DispatchQueue.main.async {
+            self.closeActiveWindow()
+        }
     }
 
     @objc private func openNewAppWindow() {
@@ -255,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             defer: false
         )
         secondaryWindow.title = "LLM Wiki Agent"
+        secondaryWindow.isReleasedWhenClosed = false
         secondaryWindow.center()
         secondaryWindow.contentView = secondaryWebView
         secondaryWindow.makeKeyAndOrderFront(nil)
@@ -351,12 +355,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func closeActiveWindow() {
         guard let active = activeAppWindow() else { return }
         if active === window {
-            _ = windowShouldClose(active)
+            if closeButtonKeepsRunning {
+                active.orderOut(nil)
+                if appWindows().isEmpty {
+                    NSApp.setActivationPolicy(.accessory)
+                }
+            } else {
+                NSApp.terminate(nil)
+            }
         } else {
-            active.close()
+            active.orderOut(nil)
             childWindows.removeAll { $0 === active || !$0.isVisible }
         }
-        rebuildWindowMenu()
+        DispatchQueue.main.async {
+            self.rebuildWindowMenu()
+            self.updateMenuStates()
+        }
     }
 
     @objc private func focusWindowFromMenu(_ sender: NSMenuItem) {
@@ -574,6 +588,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             defer: false
         )
         childWindow.title = "LLM Wiki Agent"
+        childWindow.isReleasedWhenClosed = false
         childWindow.center()
         childWindow.contentView = childWebView
         childWindow.makeKeyAndOrderFront(nil)
