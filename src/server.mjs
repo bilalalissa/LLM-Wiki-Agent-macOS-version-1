@@ -2833,6 +2833,7 @@ function markdownToHtml(markdown) {
   const html = [];
   let inCode = false;
   let inList = false;
+  const usedHeadingIds = new Map();
   const closeList = () => {
     if (inList) {
       html.push("</ul>");
@@ -2853,17 +2854,22 @@ function markdownToHtml(markdown) {
       html.push(serverEscapeHtml(line));
       continue;
     }
+    if (/^\s*<a\s+id=["']top["']><\/a>\s*$/i.test(line)) {
+      closeList();
+      html.push('<a id="top"></a>');
+      continue;
+    }
     if (line.startsWith("# ")) {
       closeList();
-      html.push(`<h1>${inline(line.slice(2))}</h1>`);
+      html.push(headingHtml(1, line.slice(2), usedHeadingIds));
     }
     else if (line.startsWith("## ")) {
       closeList();
-      html.push(`<h2>${inline(line.slice(3))}</h2>`);
+      html.push(headingHtml(2, line.slice(3), usedHeadingIds));
     }
     else if (line.startsWith("### ")) {
       closeList();
-      html.push(`<h3>${inline(line.slice(4))}</h3>`);
+      html.push(headingHtml(3, line.slice(4), usedHeadingIds));
     }
     else if (line.startsWith("- ")) {
       if (!inList) {
@@ -2882,10 +2888,33 @@ function markdownToHtml(markdown) {
 
 function sanitizeHelpMarkdown(markdown) {
   return String(markdown)
-    .replace(/<a\s+id=["']top["']><\/a>\s*/gi, "")
     .replace(/<p\s+align=["']center["']>[\s\S]*?<\/p>\s*/gi, "")
     .replace(/^\s*<img\b[^>]*>\s*$/gmi, "")
     .replace(/^\s*<\/?p[^>]*>\s*$/gmi, "");
+}
+
+function headingHtml(level, text, usedHeadingIds) {
+  const id = uniqueHeadingId(helpHeadingSlug(text), usedHeadingIds);
+  return `<h${level} id="${serverEscapeHtml(id)}">${inline(text)}</h${level}>`;
+}
+
+function uniqueHeadingId(base, usedHeadingIds) {
+  const clean = base || "section";
+  const count = usedHeadingIds.get(clean) || 0;
+  usedHeadingIds.set(clean, count + 1);
+  return count ? `${clean}-${count}` : clean;
+}
+
+function helpHeadingSlug(text) {
+  return decodeHtmlEntities(String(text || ""))
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function inline(text) {
