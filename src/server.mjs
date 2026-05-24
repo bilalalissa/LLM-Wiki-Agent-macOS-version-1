@@ -482,17 +482,17 @@ function renderHtml() {
     .header-actions { display: flex; align-items: center; gap: 12px; }
     select { font: inherit; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); padding: 8px; }
     .help { color: var(--accent); text-decoration: none; font-weight: 650; }
-    .tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
-    .tab { appearance: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 10px 12px; cursor: pointer; }
+    .tabs { position: sticky; top: 0; z-index: 16; display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 18px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); padding-top: 6px; }
+    .tab { appearance: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 10px; cursor: pointer; }
     .tab .status-dot { width: 8px; height: 8px; margin-right: 6px; box-shadow: none; vertical-align: 1px; }
     .tab.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 700; }
     .panel { display: none; }
     .panel.active { display: block; }
-    form { display: flex; gap: 10px; margin-bottom: 18px; }
-    input, textarea { flex: 1; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
+    form { display: flex; gap: 8px; margin-bottom: 12px; }
+    input, textarea { flex: 1; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
     textarea { min-height: 90px; width: 100%; box-sizing: border-box; resize: vertical; }
-    button.primary { font: inherit; padding: 12px 16px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
-    button.secondary { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+    button.primary { font: inherit; padding: 9px 12px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
+    button.secondary { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
     button:disabled { opacity: 0.55; cursor: default; }
     .table-controls { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, auto)); gap: 8px; align-items: center; margin: 12px 0; }
     .table-controls input, .table-controls select { min-width: 0; width: 100%; box-sizing: border-box; }
@@ -500,7 +500,16 @@ function renderHtml() {
     th.sortable::after { content: " ↕"; color: var(--muted); font-weight: 400; }
     th.sortable.sort-asc::after { content: " ↑"; color: var(--accent); }
     th.sortable.sort-desc::after { content: " ↓"; color: var(--accent); }
-    .result-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 10px; }
+    .result-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; margin: -4px 0 8px; }
+    .panel.active > form,
+    .panel.active > .result-tools,
+    .panel.active > .table-controls,
+    .panel.active > .config-path-row { position: sticky; top: 48px; z-index: 14; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); padding: 6px; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 18px var(--shadow); }
+    .panel.active > form + .result-tools,
+    .panel.active > .local-display-tools,
+    .panel.active > p + .result-tools,
+    .panel.active > .config-path-row { top: 102px; }
+    #local-panel.panel.active > .result-tools:not(.local-display-tools):last-of-type { top: 150px; }
     .copy-feedback { color: var(--muted); font-size: 13px; min-width: 54px; }
     .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; }
     .answer p { margin: 0 0 12px; }
@@ -553,6 +562,15 @@ function renderHtml() {
     .status-dot.red { background: #dc2626; }
     .status-dot.grey { background: #9ca3af; }
     .selection-toolbar { position: fixed; display: none; z-index: 20; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
+    .snap-overlay { position: fixed; inset: 0; display: none; z-index: 40; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.76); padding: 32px; box-sizing: border-box; }
+    .snap-box { width: min(920px, 92vw); max-height: 82vh; overflow: auto; background: #05070c; color: #f8fbff; border: 2px solid #70e6ff; border-radius: 8px; padding: 28px; box-shadow: 0 0 28px rgba(57, 213, 255, 0.55), inset 0 0 18px rgba(255, 255, 255, 0.08); animation: snap-spark 1.2s linear infinite; }
+    .snap-text { white-space: pre-wrap; line-height: 1.45; font-size: var(--snap-size, 34px); font-weight: 750; letter-spacing: 0; }
+    .snap-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: #d8f7ff; }
+    .snap-controls input { flex: 0 1 260px; accent-color: #70e6ff; }
+    @keyframes snap-spark {
+      0%, 100% { border-color: #70e6ff; box-shadow: 0 0 20px rgba(57, 213, 255, 0.45), inset 0 0 18px rgba(255, 255, 255, 0.08); }
+      50% { border-color: #ffffff; box-shadow: 0 0 36px rgba(255, 255, 255, 0.72), 0 0 54px rgba(57, 213, 255, 0.38), inset 0 0 24px rgba(112, 230, 255, 0.12); }
+    }
     .note-editor { display: none; position: fixed; z-index: 21; width: min(460px, calc(100vw - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; }
     .note-tools { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 6px; align-items: center; margin-top: 8px; }
     .note-tools input { min-width: 0; }
@@ -792,6 +810,7 @@ function renderHtml() {
   </aside>
   <div id="selection-toolbar" class="selection-toolbar">
     <button id="sel-highlight" class="secondary" type="button">Highlight</button>
+    <button id="sel-snap" class="secondary" type="button">Snap</button>
     <button id="sel-copy-text" class="secondary" type="button">Copy text</button>
     <button id="sel-copy-html" class="secondary" type="button">Copy formatted</button>
     <button id="sel-copy-md" class="secondary" type="button">Copy MD</button>
@@ -810,6 +829,16 @@ function renderHtml() {
     <div class="note-actions">
       <button id="note-cancel" class="secondary" type="button">Cancel</button>
       <button id="note-save" class="primary" type="button">Save</button>
+    </div>
+  </div>
+  <div id="snap-overlay" class="snap-overlay">
+    <div class="snap-box">
+      <div class="snap-controls">
+        <strong>Snap</strong>
+        <label>Size <input id="snap-size" type="range" min="24" max="72" value="34"></label>
+        <button id="snap-close" class="secondary" type="button">Close</button>
+      </div>
+      <div id="snap-text" class="snap-text"></div>
     </div>
   </div>
   <script>
@@ -885,6 +914,10 @@ function renderHtml() {
     const noteInsertLink = document.querySelector("#note-insert-link");
     const noteMedia = document.querySelector("#note-media");
     const noteMediaFeedback = document.querySelector("#note-media-feedback");
+    const snapOverlay = document.querySelector("#snap-overlay");
+    const snapText = document.querySelector("#snap-text");
+    const snapSize = document.querySelector("#snap-size");
+    const snapClose = document.querySelector("#snap-close");
     const notesList = document.querySelector("#notes-list");
     const refreshNotes = document.querySelector("#refresh-notes");
     const noteDisplayMode = document.querySelector("#note-display-mode");
@@ -917,6 +950,21 @@ function renderHtml() {
       document.body.dataset.noteDisplay = noteDisplayMode.value;
       localStorage.setItem("llm-wiki-note-display", noteDisplayMode.value);
       refreshResultAnnotations();
+    });
+
+    const savedSnapSize = localStorage.getItem("llm-wiki-snap-size") || "34";
+    snapSize.value = savedSnapSize;
+    snapOverlay.style.setProperty("--snap-size", savedSnapSize + "px");
+    snapSize.addEventListener("input", () => {
+      snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
+      localStorage.setItem("llm-wiki-snap-size", snapSize.value);
+    });
+    snapClose.addEventListener("click", closeSnap);
+    snapOverlay.addEventListener("click", (event) => {
+      if (event.target === snapOverlay) closeSnap();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && snapOverlay.style.display === "flex") closeSnap();
     });
 
     localResultView.value = localStorage.getItem("llm-wiki-local-result-view") || "combined";
@@ -1879,6 +1927,7 @@ function renderHtml() {
       selection.removeAllRanges();
       hideSelectionTools();
     });
+    document.querySelector("#sel-snap").addEventListener("click", showSnap);
     document.querySelector("#sel-copy-text").addEventListener("click", () => copySelected("text"));
     document.querySelector("#sel-copy-html").addEventListener("click", () => copySelected("html"));
     document.querySelector("#sel-copy-md").addEventListener("click", () => copySelected("markdown"));
@@ -1902,6 +1951,21 @@ function renderHtml() {
     noteInsertLink.addEventListener("click", insertNoteLink);
     noteMedia.addEventListener("change", uploadNoteMedia);
     noteText.addEventListener("paste", pasteNoteMedia);
+
+    function showSnap() {
+      const text = selectedInfo?.text || window.getSelection()?.toString()?.trim() || "";
+      if (!text) return;
+      snapText.textContent = text;
+      snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
+      snapOverlay.style.display = "flex";
+      clearTextSelection();
+      hideSelectionTools();
+    }
+
+    function closeSnap() {
+      snapOverlay.style.display = "none";
+      snapText.textContent = "";
+    }
 
     function selectionInfo(selection, box) {
       const text = selection.toString().trim();
