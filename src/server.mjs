@@ -596,6 +596,8 @@ function renderHtml() {
     th.sortable.sort-asc::after { content: " ↑"; color: var(--accent); }
     th.sortable.sort-desc::after { content: " ↓"; color: var(--accent); }
     .result-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; margin: -4px 0 8px; }
+    .chat-controls form { flex: 1 1 100%; }
+    .chat-controls .result-tools { justify-content: flex-end; }
     .sticky-controls { position: sticky; top: 48px; z-index: 14; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); padding: 8px; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 18px var(--shadow); margin-bottom: 12px; }
     .sticky-controls form, .sticky-controls .result-tools, .sticky-controls .table-controls { position: static; flex: 1 1 auto; margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
     .sticky-controls .result-tools { justify-content: flex-start; }
@@ -603,12 +605,15 @@ function renderHtml() {
     .sticky-controls .table-controls input { flex: 1 1 260px; }
     .sticky-controls .table-controls select { flex: 0 1 180px; }
     .copy-feedback { color: var(--muted); font-size: 13px; min-width: 54px; }
-    .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; direction: auto; text-align: start; }
+    .answer { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-height: 260px; line-height: 1.5; direction: auto; text-align: start; overflow-wrap: anywhere; }
     .answer [dir="auto"], .answer [dir="rtl"], .answer [dir="ltr"] { text-align: start; }
-    .answer[dir="rtl"], .answer [dir="rtl"] { padding-inline-start: 0; padding-inline-end: 24px; }
+    .answer [data-align="right"] { text-align: right; }
+    .answer [data-align="left"] { text-align: left; }
     .answer p { margin: 0 0 12px; }
-    .answer ul, .answer ol { margin-top: 0; padding-left: 24px; }
-    .answer ul[dir="rtl"], .answer ol[dir="rtl"], .answer [dir="rtl"] ul, .answer [dir="rtl"] ol { padding-left: 0; padding-right: 24px; }
+    .answer ul, .answer ol { margin-top: 0; padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
+    .local-result-body > ul { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; }
+    .local-result-body[dir="rtl"] > ul, .local-result-body[data-align="right"] > ul { padding-inline-start: 0; padding-inline-end: 1.4em; list-style-position: inside; }
+    .local-result-body[dir="ltr"] > ul, .local-result-body[data-align="left"] > ul { padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
     .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
     .local-display-tools { justify-content: flex-start; margin-top: 0; }
     .local-tree { display: grid; gap: 10px; }
@@ -616,7 +621,7 @@ function renderHtml() {
     .local-tree-type { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 12px; }
     details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
     details.local-result > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
-    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; }
+    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; overflow: hidden; }
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .local-result-title { min-width: 0; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
@@ -722,23 +727,25 @@ function renderHtml() {
     </nav>
     <p id="status" class="status">Checking auto-ingest status...</p>
     <section id="chat-panel" class="panel active">
-      <form id="form">
-        <input id="question" autocomplete="off" placeholder="Ask about your vaults">
-        <button id="ask" class="primary" type="submit">Ask</button>
-        <button id="clear-chat" class="secondary" type="button">Clear</button>
-      </form>
-      <div class="result-tools">
-        <label class="muted" for="chat-save-vault">Save to</label>
-        <select id="chat-save-vault">${vaultOptions}</select>
-        <button id="save-chat-source" class="secondary" type="button">Save as raw source</button>
-        <span id="save-chat-feedback" class="copy-feedback"></span>
-        <select id="chat-copy-format">
-          <option value="text">Pure text</option>
-          <option value="html">Formatted text</option>
-          <option value="markdown">Markdown</option>
-        </select>
-        <button id="copy-chat" class="secondary" type="button">Copy</button>
-        <span id="chat-copy-feedback" class="copy-feedback"></span>
+      <div class="sticky-controls chat-controls">
+        <form id="form">
+          <input id="question" autocomplete="off" placeholder="Ask about your vaults">
+          <button id="ask" class="primary" type="submit">Ask</button>
+          <button id="clear-chat" class="secondary" type="button">Clear</button>
+        </form>
+        <div class="result-tools">
+          <label class="muted" for="chat-save-vault">Save to</label>
+          <select id="chat-save-vault">${vaultOptions}</select>
+          <button id="save-chat-source" class="secondary" type="button">Save as raw source</button>
+          <span id="save-chat-feedback" class="copy-feedback"></span>
+          <select id="chat-copy-format">
+            <option value="text">Pure text</option>
+            <option value="html">Formatted text</option>
+            <option value="markdown">Markdown</option>
+          </select>
+          <button id="copy-chat" class="secondary" type="button">Copy</button>
+          <span id="chat-copy-feedback" class="copy-feedback"></span>
+        </div>
       </div>
       <div id="answer" class="answer">Ready.</div>
     </section>
@@ -1866,9 +1873,11 @@ function renderHtml() {
       const details = button.closest(".local-result");
       const dir = button.dataset.dir || "auto";
       if (!details) return;
+      const align = dir === "rtl" ? "right" : dir === "ltr" ? "left" : "";
       details.querySelectorAll(".dir-button").forEach((item) => item.classList.toggle("active", item === button));
-      details.querySelector(".local-result-body")?.setAttribute("dir", dir);
-      details.querySelector(".local-result-title")?.setAttribute("dir", dir);
+      setNodeDirection(details.querySelector(".local-result-body"), dir, align);
+      setNodeDirection(details.querySelector(".local-result-title"), dir, align);
+      details.querySelectorAll(".local-result-body li").forEach((item) => setNodeDirection(item, dir, align));
     });
 
     function renderLocalStructured(markdown) {
@@ -1973,9 +1982,23 @@ function renderHtml() {
     function applyAutoDirection(root) {
       root.setAttribute("dir", "auto");
       root.style.textAlign = "start";
+      root.removeAttribute("data-align");
       root.querySelectorAll("p, li, h1, h2, h3, h4, summary, .local-result-body, .local-result-title").forEach((node) => {
         if (!node.hasAttribute("dir")) node.setAttribute("dir", "auto");
+        if (!node.dataset.align) node.style.textAlign = "start";
       });
+    }
+
+    function setNodeDirection(node, dir, align) {
+      if (!node) return;
+      node.setAttribute("dir", dir);
+      if (align) {
+        node.dataset.align = align;
+        node.style.textAlign = align;
+      } else {
+        delete node.dataset.align;
+        node.style.textAlign = "start";
+      }
     }
 
     function shouldOpenLocalResult(index) {
