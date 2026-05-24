@@ -453,7 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 defer: false
             )
             overlay.level = .screenSaver
-            overlay.backgroundColor = NSColor.black.withAlphaComponent(0.76)
+            overlay.backgroundColor = NSColor.black.withAlphaComponent(0.88)
             overlay.isOpaque = false
             overlay.isReleasedWhenClosed = false
             overlay.ignoresMouseEvents = index != 0
@@ -469,14 +469,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     private func addSnapBox(to window: NSWindow, text: String, size: CGFloat, borderColor: NSColor) {
         guard let content = window.contentView else { return }
-        let margin: CGFloat = 80
-        let maxWidth = min(content.bounds.width - margin * 2, 1100)
+        let margin: CGFloat = 50
+        let maxWidth = content.bounds.width - margin * 2
         let maxHeight = content.bounds.height - margin * 2
-        let minWidth: CGFloat = min(520, maxWidth)
-        let minHeight: CGFloat = min(260, maxHeight)
-        let textSize = measuredSnapTextSize(text: text, fontSize: size, maxWidth: maxWidth - 72)
-        let width = min(maxWidth, max(minWidth, textSize.width + 92))
-        let height = min(maxHeight, max(minHeight, textSize.height + 154))
+        let minWidth: CGFloat = min(460, maxWidth)
+        let minHeight: CGFloat = min(220, maxHeight)
+        let horizontalPadding: CGFloat = 72
+        let verticalPadding: CGFloat = 132
+        let textSize = measuredSnapTextSize(text: text, fontSize: size, maxWidth: maxWidth - horizontalPadding)
+        let width = min(maxWidth, max(minWidth, textSize.width + horizontalPadding))
+        let height = min(maxHeight, max(minHeight, textSize.height + verticalPadding))
         let box = NSView(frame: NSRect(x: (content.bounds.width - width) / 2, y: (content.bounds.height - height) / 2, width: width, height: height))
         box.wantsLayer = true
         box.layer?.backgroundColor = NSColor(red: 0.02, green: 0.03, blue: 0.06, alpha: 1).cgColor
@@ -508,7 +510,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         controls.addSubview(label)
 
         let scroll = NSScrollView(frame: NSRect(x: 28, y: 28, width: width - 56, height: height - 112))
-        scroll.hasVerticalScroller = true
+        scroll.hasVerticalScroller = textSize.height + 20 > scroll.frame.height
+        scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
         let textView = NSTextView(frame: scroll.bounds)
         textView.isEditable = false
@@ -517,6 +520,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         textView.font = NSFont.systemFont(ofSize: size, weight: .bold)
         textView.string = text
         textView.textContainerInset = NSSize(width: 10, height: 10)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: scroll.frame.width - 20, height: CGFloat.greatestFiniteMagnitude)
         scroll.documentView = textView
         box.addSubview(scroll)
         snapTextView = textView
@@ -558,20 +563,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     private func startSnapSparkle(on view: NSView) {
         let opacity = CABasicAnimation(keyPath: "shadowOpacity")
-        opacity.fromValue = 0.45
-        opacity.toValue = 0.95
-        opacity.duration = 0.7
+        opacity.fromValue = 0.55
+        opacity.toValue = 1.0
+        opacity.duration = 0.42
         opacity.autoreverses = true
         opacity.repeatCount = .infinity
+        opacity.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         view.layer?.add(opacity, forKey: "snapShadowOpacity")
 
         let radius = CABasicAnimation(keyPath: "shadowRadius")
         radius.fromValue = 18
-        radius.toValue = 34
-        radius.duration = 0.7
+        radius.toValue = 48
+        radius.duration = 0.42
         radius.autoreverses = true
         radius.repeatCount = .infinity
+        radius.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         view.layer?.add(radius, forKey: "snapShadowRadius")
+
+        let border = CABasicAnimation(keyPath: "borderWidth")
+        border.fromValue = 2.5
+        border.toValue = 5.5
+        border.duration = 0.42
+        border.autoreverses = true
+        border.repeatCount = .infinity
+        border.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        view.layer?.add(border, forKey: "snapBorderWidth")
     }
 
     private func randomSparkColor() -> NSColor {
