@@ -13,7 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     private var closeBehaviorItem: NSMenuItem!
     private var setupAlertItem: NSMenuItem!
     private var snapWindows: [NSWindow] = []
-    private var snapSparkTimer: Timer?
     private weak var snapBoxView: NSView?
     private weak var snapTextView: NSTextView?
     private let closeBehaviorKey = "closeButtonKeepsRunning"
@@ -456,25 +455,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             overlay.level = .screenSaver
             overlay.backgroundColor = NSColor.black.withAlphaComponent(0.76)
             overlay.isOpaque = false
+            overlay.isReleasedWhenClosed = false
             overlay.ignoresMouseEvents = index != 0
             overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            overlay.contentView = NSView(frame: screen.frame)
+            overlay.contentView = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
             if index == 0 {
                 addSnapBox(to: overlay, text: text, size: size, borderColor: borderColor)
             }
             overlay.makeKeyAndOrderFront(nil)
             snapWindows.append(overlay)
         }
-        snapSparkTimer = Timer.scheduledTimer(withTimeInterval: 0.55, repeats: true) { [weak self] _ in
-            self?.sparkSnapBorder()
-        }
     }
 
     private func addSnapBox(to window: NSWindow, text: String, size: CGFloat, borderColor: NSColor) {
         guard let content = window.contentView else { return }
-        let width = min(window.frame.width * 0.82, 980)
-        let height = min(window.frame.height * 0.72, 620)
-        let box = NSView(frame: NSRect(x: (window.frame.width - width) / 2, y: (window.frame.height - height) / 2, width: width, height: height))
+        let margin: CGFloat = 80
+        let maxWidth = min(content.bounds.width - margin * 2, 1100)
+        let maxHeight = content.bounds.height - margin * 2
+        let minWidth: CGFloat = min(520, maxWidth)
+        let minHeight: CGFloat = min(260, maxHeight)
+        let textSize = measuredSnapTextSize(text: text, fontSize: size, maxWidth: maxWidth - 72)
+        let width = min(maxWidth, max(minWidth, textSize.width + 92))
+        let height = min(maxHeight, max(minHeight, textSize.height + 154))
+        let box = NSView(frame: NSRect(x: (content.bounds.width - width) / 2, y: (content.bounds.height - height) / 2, width: width, height: height))
         box.wantsLayer = true
         box.layer?.backgroundColor = NSColor(red: 0.02, green: 0.03, blue: 0.06, alpha: 1).cgColor
         box.layer?.borderWidth = 3
@@ -485,19 +488,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         box.layer?.shadowRadius = 28
         box.layer?.shadowOffset = .zero
 
+        let controls = NSView(frame: NSRect(x: 18, y: height - 62, width: width - 36, height: 44))
+        controls.wantsLayer = true
+        controls.layer?.backgroundColor = NSColor(red: 0.10, green: 0.13, blue: 0.18, alpha: 1).cgColor
+        controls.layer?.cornerRadius = 8
+        box.addSubview(controls)
+
         let close = NSButton(title: "Close", target: self, action: #selector(closeNativeSnapAction))
-        close.frame = NSRect(x: width - 96, y: height - 46, width: 72, height: 30)
-        box.addSubview(close)
+        close.bezelStyle = .rounded
+        close.frame = NSRect(x: controls.bounds.width - 88, y: 7, width: 72, height: 30)
+        controls.addSubview(close)
 
         let slider = NSSlider(value: Double(size), minValue: 24, maxValue: 84, target: self, action: #selector(snapSliderChanged(_:)))
-        slider.frame = NSRect(x: 92, y: height - 44, width: 260, height: 24)
-        box.addSubview(slider)
+        slider.frame = NSRect(x: 84, y: 10, width: min(320, controls.bounds.width - 204), height: 24)
+        controls.addSubview(slider)
         let label = NSTextField(labelWithString: "Size")
         label.textColor = NSColor(calibratedWhite: 0.86, alpha: 1)
-        label.frame = NSRect(x: 32, y: height - 42, width: 48, height: 20)
-        box.addSubview(label)
+        label.frame = NSRect(x: 18, y: 12, width: 48, height: 20)
+        controls.addSubview(label)
 
-        let scroll = NSScrollView(frame: NSRect(x: 28, y: 28, width: width - 56, height: height - 92))
+        let scroll = NSScrollView(frame: NSRect(x: 28, y: 28, width: width - 56, height: height - 112))
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
         let textView = NSTextView(frame: scroll.bounds)
@@ -512,6 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         snapTextView = textView
         snapBoxView = box
         content.addSubview(box)
+        startSnapSparkle(on: box)
     }
 
     @objc private func snapSliderChanged(_ sender: NSSlider) {
@@ -525,18 +536,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func closeNativeSnap() {
-        snapSparkTimer?.invalidate()
-        snapSparkTimer = nil
-        snapWindows.forEach { $0.close() }
+        snapWindows.forEach {
+            $0.orderOut(nil)
+            $0.close()
+        }
         snapWindows = []
         snapBoxView = nil
         snapTextView = nil
     }
 
-    private func sparkSnapBorder() {
-        let color = randomSparkColor()
-        snapBoxView?.layer?.borderColor = color.cgColor
-        snapBoxView?.layer?.shadowColor = color.cgColor
+    private func measuredSnapTextSize(text: String, fontSize: CGFloat, maxWidth: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let rect = (text as NSString).boundingRect(
+            with: NSSize(width: max(260, maxWidth), height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes
+        )
+        return CGSize(width: ceil(rect.width), height: ceil(rect.height))
+    }
+
+    private func startSnapSparkle(on view: NSView) {
+        let opacity = CABasicAnimation(keyPath: "shadowOpacity")
+        opacity.fromValue = 0.45
+        opacity.toValue = 0.95
+        opacity.duration = 0.7
+        opacity.autoreverses = true
+        opacity.repeatCount = .infinity
+        view.layer?.add(opacity, forKey: "snapShadowOpacity")
+
+        let radius = CABasicAnimation(keyPath: "shadowRadius")
+        radius.fromValue = 18
+        radius.toValue = 34
+        radius.duration = 0.7
+        radius.autoreverses = true
+        radius.repeatCount = .infinity
+        view.layer?.add(radius, forKey: "snapShadowRadius")
     }
 
     private func randomSparkColor() -> NSColor {
