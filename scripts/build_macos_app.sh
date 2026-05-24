@@ -43,6 +43,7 @@ PLIST
 
 cp "$APP_ICON" "$RESOURCES/AppIcon.icns"
 cp "$ROOT/package.json" "$AGENT/package.json"
+cp "$ROOT/README.md" "$AGENT/README.md"
 cp "$ROOT/config.example.env" "$RESOURCES/config.example.env"
 cp -R "$ROOT/src" "$AGENT/src"
 cp -R "$ROOT/docs" "$AGENT/docs"

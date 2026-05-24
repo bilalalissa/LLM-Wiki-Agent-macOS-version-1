@@ -49,6 +49,11 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - Lets useful chat answers be saved back as raw sources.
 - Supports source rename, merge, archive/restore, and permanent archive deletion.
 - Stores user notes inside related markdown files and shows note indicators in results.
+- Supports note links, file attachments, pasted clipboard images, note hover previews, and rendered note media.
+- Supports Local result display modes: tree plus accordion, accordion, and plain markdown.
+- Keeps tab navigation and key tab controls sticky while scrolling.
+- Provides a Snap focus overlay for magnified reading of selected result text.
+- Includes multiple UI themes, including Light, Dark, Sepia, Forest, Contrast, and Megatron.
 - Runs as a native macOS app with a menu bar icon and a local webview UI.
 
 [Back to top](#top)
@@ -211,6 +216,12 @@ Local result display options:
 
 The Local display preference is saved on the device.
 
+Main app layout:
+
+- Tab titles stay fixed at the top while scrolling.
+- Local, Files, Archive, and Notes controls are grouped into a single sticky controls bar.
+- Controls are compact so result content has more reading space.
+
 Focused reading:
 
 - The tab row stays fixed while scrolling.
@@ -227,6 +238,7 @@ Adding notes from Chat or Local results:
 - Use `Add media` to attach an image, PDF, audio file, or video file. The app saves the file under `raw/assets/user-notes/` in the related vault and inserts an Obsidian embed/link into the note.
 - Paste a copied image directly into the note box with `Cmd+V`; the app saves it as note media and inserts the Obsidian embed.
 - Saved notes are written into the related markdown file under `## User Notes`, so they remain visible in Obsidian and in the app.
+- Hover note indicators to preview note text and attached media; click an indicator to jump to the note card in the Notes tab.
 
 Processed source language:
 

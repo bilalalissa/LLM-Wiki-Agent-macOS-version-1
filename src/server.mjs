@@ -2509,7 +2509,7 @@ function renderHtml() {
 }
 
 function renderHelp() {
-  const markdown = fs.readFileSync("README.md", "utf8");
+  const markdown = readHelpMarkdown();
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -2545,6 +2545,28 @@ function renderHelp() {
   </script>
 </body>
 </html>`;
+}
+
+function readHelpMarkdown() {
+  const candidates = [
+    "README.md",
+    "../README.md",
+    "docs/ENV_AND_GITIGNORE.md"
+  ];
+  for (const file of candidates) {
+    try {
+      if (fs.existsSync(file)) return fs.readFileSync(file, "utf8");
+    } catch {
+      // Try the next bundled help source.
+    }
+  }
+  return [
+    "# LLM Wiki Agent Help",
+    "",
+    "The app help file could not be found in this installation.",
+    "",
+    "Use the menu bar icon to open the config file, verify `VAULTS_ROOT`, and reinstall the app from the latest build."
+  ].join("\\n");
 }
 
 function markdownToHtml(markdown) {
