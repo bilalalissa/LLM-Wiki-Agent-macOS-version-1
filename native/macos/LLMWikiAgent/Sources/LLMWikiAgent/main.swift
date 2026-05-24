@@ -251,11 +251,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         secondaryWindow.makeKeyAndOrderFront(nil)
         childWindows.append(secondaryWindow)
 
-        if let url = URL(string: "http://127.0.0.1:\(port)/?window=secondary&t=\(Date().timeIntervalSince1970)") {
-            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
-            request.timeoutInterval = 4
-            secondaryWebView.load(request)
+        if serverProcess?.isRunning != true {
+            startServer()
         }
+        loadAppWhenReady(in: secondaryWebView)
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         updateMenuStates()
@@ -388,23 +387,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     private func loadAppWhenReady(attempt: Int = 1) {
+        loadAppWhenReady(in: webView, attempt: attempt)
+    }
+
+    private func loadAppWhenReady(in targetWebView: WKWebView, attempt: Int = 1) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "dev"
-        guard let url = URL(string: "http://127.0.0.1:\(port)/?v=\(version)") else { return }
+        guard let url = URL(string: "http://127.0.0.1:\(port)/?v=\(version)&window=\(UUID().uuidString)") else { return }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
         request.timeoutInterval = 1.5
         URLSession.shared.dataTask(with: request) { data, response, error in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200 && !(data?.isEmpty ?? true)
             DispatchQueue.main.async {
                 if ok {
-                    self.webView.load(request)
+                    targetWebView.load(request)
                 } else if attempt < 40 {
-                    self.webView.loadHTMLString(self.statusHTML("Starting LLM Wiki Agent", "Waiting for the local server... attempt \(attempt)/40"), baseURL: nil)
+                    targetWebView.loadHTMLString(self.statusHTML("Starting LLM Wiki Agent", "Waiting for the local server... attempt \(attempt)/40"), baseURL: nil)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        self.loadAppWhenReady(attempt: attempt + 1)
+                        self.loadAppWhenReady(in: targetWebView, attempt: attempt + 1)
                     }
                 } else {
                     let detail = error?.localizedDescription ?? "The local server did not return a page."
-                    self.webView.loadHTMLString(self.statusHTML("Could not load the app", "\(detail)<br><br>Use the menu bar icon -> Open Config to check configuration, then quit and reopen the app."), baseURL: nil)
+                    targetWebView.loadHTMLString(self.statusHTML("Could not load the app", "\(detail)<br><br>Use the menu bar icon -> Open Config to check configuration, then quit and reopen the app."), baseURL: nil)
                 }
             }
         }.resume()
