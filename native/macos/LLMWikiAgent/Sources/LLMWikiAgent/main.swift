@@ -1,12 +1,14 @@
 import AppKit
+import CoreGraphics
 import ServiceManagement
 import UniformTypeIdentifiers
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem!
+    private var windowMenu: NSMenu!
     private var serverProcess: Process?
     private var startAtLoginItem: NSMenuItem!
     private var dockIconItem: NSMenuItem!
@@ -130,12 +132,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         mainMenu.addItem(editMenuItem)
 
         let windowMenuItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(menuItem("New App Window", #selector(openNewAppWindow), "n"))
-        windowMenu.addItem(menuItem("Close Window", #selector(closeWindowCommand), "w"))
+        windowMenu = NSMenu(title: "Window")
+        windowMenu.delegate = self
+        rebuildWindowMenu()
         windowMenuItem.submenu = windowMenu
         mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = mainMenu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        if menu === windowMenu {
+            rebuildWindowMenu()
+        }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -228,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     }
 
     @objc private func closeWindowCommand() {
-        _ = windowShouldClose(window)
+        closeActiveWindow()
     }
 
     @objc private func openNewAppWindow() {
@@ -262,6 +271,139 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    private func rebuildWindowMenu() {
+        guard let windowMenu else { return }
+        windowMenu.removeAllItems()
+        windowMenu.addItem(menuItem("New App Window", #selector(openNewAppWindow), "n"))
+        windowMenu.addItem(menuItem("Close Active Window", #selector(closeWindowCommand), "w"))
+        windowMenu.addItem(NSMenuItem.separator())
+
+        let visibleWindows = appWindows()
+        if visibleWindows.isEmpty {
+            let item = NSMenuItem(title: "No displayed app windows", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            windowMenu.addItem(item)
+        } else {
+            for (index, appWindow) in visibleWindows.enumerated() {
+                let title = "\(index + 1). \(windowTitle(appWindow))"
+                let item = menuItem(title, #selector(focusWindowFromMenu(_:)), "")
+                item.representedObject = appWindow.windowNumber
+                item.state = appWindow === activeAppWindow() ? .on : .off
+                windowMenu.addItem(item)
+            }
+        }
+
+        windowMenu.addItem(NSMenuItem.separator())
+        addScreenMoveItems(to: windowMenu)
+    }
+
+    private func addScreenMoveItems(to menu: NSMenu) {
+        let screens = NSScreen.screens
+        let active = activeAppWindow()
+        if screens.count > 1, let active {
+            let header = NSMenuItem(title: "Move Active Window To", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for (index, screen) in screens.enumerated() {
+                if active.screen === screen { continue }
+                let item = menuItem(screenName(screen, index: index), #selector(moveActiveWindowToScreen(_:)), "")
+                item.representedObject = index
+                menu.addItem(item)
+            }
+            if mirroredDisplayDetected {
+                let note = NSMenuItem(title: "Screen mirroring detected", action: nil, keyEquivalent: "")
+                note.isEnabled = false
+                menu.addItem(note)
+            }
+        } else {
+            let title = mirroredDisplayDetected
+                ? "Screen mirroring detected; no separate move target"
+                : "No other screen detected"
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+    }
+
+    private func appWindows() -> [NSWindow] {
+        childWindows = childWindows.filter { $0.isVisible }
+        var result: [NSWindow] = []
+        if let window, window.isVisible {
+            result.append(window)
+        }
+        result.append(contentsOf: childWindows.filter { $0.isVisible && $0 !== window })
+        return result
+    }
+
+    private func activeAppWindow() -> NSWindow? {
+        let visibleWindows = appWindows()
+        if let key = NSApp.keyWindow, visibleWindows.contains(where: { $0 === key }) {
+            return key
+        }
+        if let main = NSApp.mainWindow, visibleWindows.contains(where: { $0 === main }) {
+            return main
+        }
+        return visibleWindows.last
+    }
+
+    private func closeActiveWindow() {
+        guard let active = activeAppWindow() else { return }
+        if active === window {
+            _ = windowShouldClose(active)
+        } else {
+            active.close()
+            childWindows.removeAll { $0 === active || !$0.isVisible }
+        }
+        rebuildWindowMenu()
+    }
+
+    @objc private func focusWindowFromMenu(_ sender: NSMenuItem) {
+        guard let number = sender.representedObject as? Int,
+              let target = appWindows().first(where: { $0.windowNumber == number }) else { return }
+        NSApp.setActivationPolicy(.regular)
+        target.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        updateMenuStates()
+    }
+
+    @objc private func moveActiveWindowToScreen(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int,
+              NSScreen.screens.indices.contains(index),
+              let active = activeAppWindow() else { return }
+        move(active, to: NSScreen.screens[index])
+    }
+
+    private func move(_ targetWindow: NSWindow, to screen: NSScreen) {
+        let visible = screen.visibleFrame
+        var frame = targetWindow.frame
+        frame.size.width = min(frame.width, visible.width - 40)
+        frame.size.height = min(frame.height, visible.height - 40)
+        frame.origin.x = visible.midX - frame.width / 2
+        frame.origin.y = visible.midY - frame.height / 2
+        targetWindow.setFrame(frame, display: true, animate: true)
+        targetWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func windowTitle(_ targetWindow: NSWindow) -> String {
+        if targetWindow === window {
+            return "Main App Window"
+        }
+        return targetWindow.title.isEmpty ? "App Window" : targetWindow.title
+    }
+
+    private func screenName(_ screen: NSScreen, index: Int) -> String {
+        "\(index + 1). \(screen.localizedName)"
+    }
+
+    private var mirroredDisplayDetected: Bool {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return false }
+        var displays = Array(repeating: CGDirectDisplayID(), count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return false }
+        return displays.contains { CGDisplayIsInMirrorSet($0) != 0 || CGDisplayIsInHWMirrorSet($0) != 0 }
     }
 
     private func ensureConfig() {
