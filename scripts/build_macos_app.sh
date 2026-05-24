@@ -47,6 +47,9 @@ cp "$ROOT/README.md" "$AGENT/README.md"
 cp "$ROOT/config.example.env" "$RESOURCES/config.example.env"
 cp -R "$ROOT/src" "$AGENT/src"
 cp -R "$ROOT/docs" "$AGENT/docs"
+if [ -d "$ROOT/media" ]; then
+  cp -R "$ROOT/media" "$AGENT/media"
+fi
 find "$AGENT" -name '.DS_Store' -delete
 
 echo "Built: $APP"

@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { deleteArchivedItems } from "./archive-delete.mjs";
 import { restoreArchivedItems } from "./archive-restore.mjs";
 import { backfillLearningSections } from "./backfill-learning-sections.mjs";
@@ -27,6 +28,7 @@ let config = getConfig();
 let provider = createProvider(config);
 let ingestRunning = false;
 let lastIngestMessage = "Auto-ingest has not run yet.";
+const agentRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
@@ -40,6 +42,18 @@ const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname === "/help") {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(renderHelp());
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname.startsWith("/media/")) {
+    try {
+      const media = resolveHelpMedia(url.pathname.slice("/media/".length));
+      response.writeHead(200, { "content-type": media.contentType });
+      fs.createReadStream(media.file).pipe(response);
+    } catch {
+      response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+      response.end(renderNotFound("That README media file could not be found."));
+    }
     return;
   }
 
@@ -332,8 +346,8 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  response.writeHead(404);
-  response.end("Not found");
+  response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+  response.end(renderNotFound("The page you opened is not available."));
 });
 
 server.listen(config.chatPort, "127.0.0.1", () => {
@@ -381,6 +395,27 @@ function resolveVaultMedia(config, vault, file) {
   if (full !== root && !full.startsWith(root + path.sep)) throw new Error("Invalid media path.");
   if (!fs.existsSync(full)) throw new Error("Media file not found.");
   return { file: full, contentType: mediaContentType(full) };
+}
+
+function resolveHelpMedia(file) {
+  const normalized = decodeURIComponent(String(file || ""))
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+  if (!normalized || normalized.includes("\0") || normalized.split("/").includes("..")) {
+    throw new Error("Invalid media path.");
+  }
+  const roots = [
+    path.join(agentRoot, "media"),
+    path.resolve("media"),
+    path.resolve("../media")
+  ];
+  for (const root of roots) {
+    const full = path.resolve(root, normalized);
+    if ((full === root || full.startsWith(root + path.sep)) && fs.existsSync(full)) {
+      return { file: full, contentType: mediaContentType(full) };
+    }
+  }
+  throw new Error("Media file not found.");
 }
 
 function mediaContentType(file) {
@@ -2533,6 +2568,7 @@ function renderHelp() {
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid var(--line); padding: 8px; text-align: left; }
     .back { display: inline-block; margin-bottom: 14px; font-weight: 650; text-decoration: none; }
+    .muted { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -2547,11 +2583,50 @@ function renderHelp() {
 </html>`;
 }
 
+function renderNotFound(message) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Wiki Agent</title>
+  <style>
+    :root { --bg: #f6f7f9; --text: #18202b; --panel: #ffffff; --line: #dce1e8; --muted: #697386; --accent: #1f5eff; --shadow: rgba(20, 32, 50, 0.08); }
+    body[data-theme="dark"] { --bg: #111827; --text: #e5e7eb; --panel: #1f2937; --line: #374151; --muted: #9ca3af; --accent: #60a5fa; --shadow: rgba(0, 0, 0, 0.28); }
+    body[data-theme="sepia"] { --bg: #f4ecd8; --text: #2f271f; --panel: #fffaf0; --line: #d8c7a3; --muted: #75664f; --accent: #8a5a19; --shadow: rgba(80, 58, 28, 0.12); }
+    body[data-theme="forest"] { --bg: #edf5ef; --text: #10251a; --panel: #fbfffc; --line: #b8d0c0; --muted: #55705f; --accent: #22734a; --shadow: rgba(24, 82, 53, 0.12); }
+    body[data-theme="contrast"] { --bg: #ffffff; --text: #000000; --panel: #ffffff; --line: #000000; --muted: #333333; --accent: #000000; --shadow: rgba(0, 0, 0, 0.2); }
+    body[data-theme="megatron"] { --bg: #0b0d12; --text: #e8eef7; --panel: #161a23; --line: #3b4354; --muted: #9aa8bd; --accent: #39d5ff; --shadow: rgba(0, 0, 0, 0.36); }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 720px; margin: 0 auto; padding: 72px 20px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 24px; box-shadow: 0 12px 30px var(--shadow); }
+    h1 { margin: 0 0 10px; font-size: 24px; }
+    p { color: var(--muted); line-height: 1.5; }
+    a { color: var(--accent); font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Content not found</h1>
+      <p>${serverEscapeHtml(message)}</p>
+      <a href="/help">Back to README</a>
+    </section>
+  </main>
+  <script>
+    document.body.dataset.theme = localStorage.getItem("llm-wiki-theme") || "light";
+  </script>
+</body>
+</html>`;
+}
+
 function readHelpMarkdown() {
   const candidates = [
-    "README.md",
-    "../README.md",
-    "docs/ENV_AND_GITIGNORE.md"
+    path.join(agentRoot, "README.md"),
+    path.resolve("README.md"),
+    path.resolve("../README.md"),
+    path.join(agentRoot, "docs", "ENV_AND_GITIGNORE.md"),
+    path.resolve("docs/ENV_AND_GITIGNORE.md")
   ];
   for (const file of candidates) {
     try {
@@ -2570,14 +2645,16 @@ function readHelpMarkdown() {
 }
 
 function markdownToHtml(markdown) {
-  const escaped = markdown
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  const lines = escaped.split(/\r?\n/);
+  const lines = sanitizeHelpMarkdown(markdown).split(/\r?\n/);
   const html = [];
   let inCode = false;
   let inList = false;
+  const closeList = () => {
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+  };
   for (const line of lines) {
     if (line.startsWith("```")) {
       if (inCode) {
@@ -2589,12 +2666,21 @@ function markdownToHtml(markdown) {
       continue;
     }
     if (inCode) {
-      html.push(line);
+      html.push(serverEscapeHtml(line));
       continue;
     }
-    if (line.startsWith("# ")) html.push(`<h1>${inline(line.slice(2))}</h1>`);
-    else if (line.startsWith("## ")) html.push(`<h2>${inline(line.slice(3))}</h2>`);
-    else if (line.startsWith("### ")) html.push(`<h3>${inline(line.slice(4))}</h3>`);
+    if (line.startsWith("# ")) {
+      closeList();
+      html.push(`<h1>${inline(line.slice(2))}</h1>`);
+    }
+    else if (line.startsWith("## ")) {
+      closeList();
+      html.push(`<h2>${inline(line.slice(3))}</h2>`);
+    }
+    else if (line.startsWith("### ")) {
+      closeList();
+      html.push(`<h3>${inline(line.slice(4))}</h3>`);
+    }
     else if (line.startsWith("- ")) {
       if (!inList) {
         html.push("<ul>");
@@ -2602,19 +2688,28 @@ function markdownToHtml(markdown) {
       }
       html.push(`<li>${inline(line.slice(2))}</li>`);
     } else {
-      if (inList) {
-        html.push("</ul>");
-        inList = false;
-      }
+      closeList();
       if (line.trim()) html.push(`<p>${inline(line)}</p>`);
     }
   }
-  if (inList) html.push("</ul>");
+  closeList();
   return html.join("\n");
 }
 
+function sanitizeHelpMarkdown(markdown) {
+  return String(markdown)
+    .replace(/<a\s+id=["']top["']><\/a>\s*/gi, "")
+    .replace(/<p\s+align=["']center["']>[\s\S]*?<\/p>\s*/gi, "")
+    .replace(/^\s*<img\b[^>]*>\s*$/gmi, "")
+    .replace(/^\s*<\/?p[^>]*>\s*$/gmi, "");
+}
+
 function inline(text) {
-  return text.replace(/`([^`]+)`/g, "<code>$1</code>");
+  return serverEscapeHtml(text)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<span class="muted">$1</span>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
 function serverEscapeHtml(value) {
