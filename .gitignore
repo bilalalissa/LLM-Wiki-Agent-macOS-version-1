@@ -13,3 +13,20 @@
 .tmp/
 .temp/
 build/
+
+# Apple platform build artifacts and simulator downloads
+DerivedData/
+*.xcarchive
+*.xcresult
+*.xcodeproj/
+*.xcworkspace/
+*.simruntime/
+*.dmg
+*.pkg
+*.xip
+
+# Keep the macOS repo from accidentally absorbing the separate iPhone/iPad app.
+LLM-Wiki-Agent-for-iPad-and-iPhone/
+*iPad*/
+*iPhone*/
+*iOS*/
