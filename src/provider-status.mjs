@@ -7,6 +7,7 @@ export async function providerStatus(config) {
   return {
     provider: config.provider,
     model: config.model,
+    transport: ["openai_subscription", "openai_oauth", "chatgpt"].includes(config.provider) ? "mac_bridge" : "direct_api",
     configFile: config.configFile,
     accessMethod: config.accessMethod,
     authMethod: providerAuthMethod(config),
@@ -14,6 +15,7 @@ export async function providerStatus(config) {
     status: live.label,
     statusColor: live.color,
     statusDetail: live.detail,
+    detail: live.detail,
     details: providerDetails(config),
     safety: [
       "Secret values are never returned by this endpoint.",

@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { today } from "./vaults.mjs";
+import { ensureSharedSettings } from "./shared-settings.mjs";
 
-export function bootstrapVault(vaultPath) {
+export function bootstrapVault(vaultPath, config = {}) {
   const created = [];
   for (const dir of [
     "raw/inbox",
@@ -20,7 +21,8 @@ export function bootstrapVault(vaultPath) {
     "wiki/synthesis",
     "wiki/maps",
     "wiki/archive",
-    "templates"
+    "templates",
+    ".llm-wiki"
   ]) {
     const full = path.join(vaultPath, dir);
     if (!fs.existsSync(full)) {
@@ -31,9 +33,11 @@ export function bootstrapVault(vaultPath) {
   ensureFile(vaultPath, "AGENTS.md", agentsTemplate(), created);
   ensureAgentsMediaRules(vaultPath, created);
   ensureAgentsLearningRules(vaultPath, created);
+  ensureAgentsSharedStateRules(vaultPath, created);
   ensureFile(vaultPath, "CLAUDE.md", "See [[AGENTS]] for the LLM Wiki operating schema.\n", created);
   ensureFile(vaultPath, "index.md", indexTemplate(), created);
   ensureFile(vaultPath, "log.md", logTemplate(), created);
+  ensureSharedSettings(vaultPath, config);
   return created;
 }
 
@@ -53,6 +57,15 @@ function ensureAgentsMediaRules(vaultPath, created) {
   if (text.includes("## Media Ingest Rules")) return;
   fs.writeFileSync(file, `${text.trim()}\n\n${mediaRulesTemplate()}\n`);
   created.push("AGENTS.md media rules");
+}
+
+function ensureAgentsSharedStateRules(vaultPath, created) {
+  const file = path.join(vaultPath, "AGENTS.md");
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, "utf8");
+  if (text.includes("## Shared Agent State")) return;
+  fs.writeFileSync(file, `${text.trim()}\n\n${sharedAgentStateTemplate()}\n`);
+  created.push("AGENTS.md shared state rules");
 }
 
 function ensureFile(vaultPath, rel, content, created) {
@@ -102,7 +115,7 @@ The agent must:
 
 - Treat \`raw/\` as immutable source material.
 - Treat \`wiki/\` as the agent-owned synthesis layer.
-- Read \`index.md\` before answering wiki questions or changing wiki pages.
+- Read \`.llm-wiki/settings.json\` and \`index.md\` before answering wiki questions or changing wiki pages.
 - Append every ingest, query, lint pass, and structural change to \`log.md\`.
 - Keep pages interlinked with Obsidian wiki links.
 - Preserve source traceability for factual claims.
@@ -130,6 +143,8 @@ wiki/
   archive/      Retired or superseded wiki pages.
 
 templates/      Reusable page templates.
+.llm-wiki/settings.json
+               Shared non-secret agent settings for macOS, iPad, iPhone, and future agents.
 index.md        Content-oriented catalog of the wiki.
 log.md          Append-only chronological maintenance record.
 AGENTS.md       This schema.
@@ -141,6 +156,8 @@ CLAUDE.md       Claude-compatible pointer to this schema.
 Every generated wiki page should include YAML frontmatter with \`type\`, \`status\`, \`created\`, \`updated\`, \`sources\`, and \`tags\`.
 
 Use source-backed claims and Obsidian wiki links. Never present an inference as a source fact.
+
+${sharedAgentStateTemplate()}
 
 ## Language Rules
 
@@ -193,6 +210,16 @@ Each learning item should use this format:
 \`\`\`
 
 Learning questions must be phrased as questions, not claims. Answers must remain source-grounded, distinguish uncertainty from fact, and help the user discover adjacent domains, real-world implications, history, geography, ethics, systems, or cross-topic links without inventing facts.`;
+}
+
+function sharedAgentStateTemplate() {
+  return `## Shared Agent State
+
+All agents that operate on this vault must read \`.llm-wiki/settings.json\` before ingest, chat, search, or maintenance. The file stores only non-secret settings so macOS, iPad, iPhone, and future agents can display the same provider mode, model label, ingest/search preferences, display preferences, enabled wiki sections, and last-known agent metadata.
+
+Secrets such as API keys, OAuth tokens, local absolute paths, bridge tokens, and subscription credentials must remain in local app storage or Keychain. The shared manifest may only record safe labels such as \`provider: openai_subscription\`, \`provider_transport: mac_bridge\`, and \`credential_status: local_only\`.
+
+Agents must display the shared settings in their Provider or Settings screen, preserve compatibility by bootstrapping the manifest when missing, and append meaningful cross-agent writes to \`log.md\`.`;
 }
 
 function mediaRulesTemplate() {

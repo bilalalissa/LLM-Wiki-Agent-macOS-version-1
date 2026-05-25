@@ -16,6 +16,7 @@ import { addNote, deleteNote, listNotes, saveNoteMedia, updateNote } from "./not
 import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
+import { listBridgeVaults, sharedSettingsForVault, sharedSettingsSummary, updateSharedSettingsForVault } from "./shared-settings.mjs";
 import { deleteSources } from "./source-delete.mjs";
 import { mergeSources } from "./source-merge.mjs";
 import { renameSource } from "./source-rename.mjs";
@@ -189,6 +190,40 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/vaults") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ vaults: listBridgeVaults(config) }));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/shared-settings") {
+    try {
+      const vault = url.searchParams.get("vault");
+      const payload = vault ? sharedSettingsForVault(config, vault) : { vaults: sharedSettingsSummary(config) };
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(payload));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/shared-settings") {
+    if (!authorizedBridgeRequest(request, response)) return;
+    try {
+      const body = await readBody(request);
+      const payload = JSON.parse(body || "{}");
+      const result = updateSharedSettingsForVault(config, payload.vault, payload.settings || {});
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(result));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/config-path") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ configFile: config.configFile }));
@@ -330,6 +365,24 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/complete") {
+    if (!authorizedBridgeRequest(request, response)) return;
+    try {
+      const body = await readBody(request);
+      const { prompt } = JSON.parse(body || "{}");
+      const text = await provider.complete([
+        { role: "system", content: "You are the Mac Bridge provider for LLM Wiki Agent. Return a useful, concise answer for the native iPhone/iPad client. Do not reveal secrets." },
+        { role: "user", content: String(prompt || "") }
+      ]);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ text }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/save-chat-source") {
     try {
       const body = await readBody(request);
@@ -361,12 +414,15 @@ const server = http.createServer(async (request, response) => {
   response.end(renderNotFound("The page you opened is not available."));
 });
 
-server.listen(config.chatPort, "127.0.0.1", () => {
-  console.log(`LLM Wiki chat UI: http://127.0.0.1:${config.chatPort}`);
+server.listen(config.chatPort, config.bridgeHost, () => {
+  console.log(`LLM Wiki chat UI: http://${config.bridgeHost}:${config.chatPort}`);
   startAutoIngest();
 });
 
 function startAutoIngest() {
+  for (const vault of listVaults(config.vaultsRoot)) {
+    bootstrapVault(vault, config);
+  }
   const backfilled = backfillLearningSections(config);
   if (backfilled.length) {
     console.log(`[backfill] added learning sections to ${backfilled.length} wiki page${backfilled.length === 1 ? "" : "s"}`);
@@ -518,7 +574,7 @@ async function runAutoIngest() {
   try {
     let count = 0;
     for (const vault of listVaults(config.vaultsRoot)) {
-      const bootstrapped = bootstrapVault(vault);
+      const bootstrapped = bootstrapVault(vault, config);
       if (bootstrapped.length) {
         console.log(`[bootstrap] ${vaultName(vault)}: ${bootstrapped.join(", ")}`);
       }
@@ -548,6 +604,17 @@ function readBody(request) {
     request.on("end", () => resolve(body));
     request.on("error", reject);
   });
+}
+
+function authorizedBridgeRequest(request, response) {
+  if (!config.bridgeToken) return true;
+  const header = request.headers["x-llm-wiki-bridge-token"] || request.headers.authorization || "";
+  const value = Array.isArray(header) ? header[0] : header;
+  const token = String(value).replace(/^Bearer\s+/i, "");
+  if (token === config.bridgeToken) return true;
+  response.writeHead(401, { "content-type": "application/json" });
+  response.end(JSON.stringify({ error: "Unauthorized Mac Bridge request." }));
+  return false;
 }
 
 function renderHtml() {
@@ -1620,22 +1687,44 @@ function renderHtml() {
     async function loadProviderStatus() {
       providerStatusBox.textContent = "Loading provider status...";
       try {
-        const response = await fetch("/api/provider-status");
-        const data = await response.json();
+        const [providerResponse, sharedResponse] = await Promise.all([
+          fetch("/api/provider-status"),
+          fetch("/api/shared-settings")
+        ]);
+        const data = await providerResponse.json();
+        const sharedData = await sharedResponse.json();
         updateProviderTabStatus(data.statusColor, data.status, data.statusDetail);
         configPathInput.value = data.configFile || "";
         const rows = [
           ["Config file", data.configFile],
           ["Provider", data.provider],
           ["Model", data.model],
+          ["Bridge transport", data.transport],
           ["Access method", data.accessMethod],
           ["Auth method", data.authMethod],
           ["Credential", data.credentialConfigured ? "configured" : "not configured"],
           ["Status detail", data.statusDetail || ""]
         ];
+        const sharedRows = (sharedData.vaults || []).flatMap((item) => {
+          const settings = item.settings || {};
+          const provider = settings.provider || {};
+          const display = settings.display || {};
+          const search = settings.search || {};
+          return [
+            [item.vault + " provider", provider.mode || ""],
+            [item.vault + " transport", provider.transport || ""],
+            [item.vault + " model", provider.defaultModel || ""],
+            [item.vault + " theme", display.theme || ""],
+            [item.vault + " local results", search.localResultView || ""]
+          ];
+        });
         providerStatusBox.innerHTML = '<h2>Current Provider</h2>' +
           '<div class="provider-state"><span class="status-dot ' + escapeHtml(data.statusColor || "grey") + '"></span><span>' + escapeHtml(data.status || "Unknown") + '</span></div>' +
           '<table><tbody>' + rows.map(([label, value]) =>
+            '<tr><th>' + escapeHtml(label) + '</th><td>' + escapeHtml(value || "") + '</td></tr>'
+          ).join("") + '</tbody></table>' +
+          '<h3>Shared Agent Settings</h3>' +
+          '<table><tbody>' + sharedRows.map(([label, value]) =>
             '<tr><th>' + escapeHtml(label) + '</th><td>' + escapeHtml(value || "") + '</td></tr>'
           ).join("") + '</tbody></table>' +
           '<h3>Details</h3>' +

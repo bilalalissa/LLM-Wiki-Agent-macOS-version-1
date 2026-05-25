@@ -58,6 +58,8 @@ export function getConfig() {
     ingestMaxChars: Number(env.INGEST_MAX_CHARS || 60000),
     chatMaxFiles: Number(env.CHAT_MAX_FILES || 24),
     chatPort: Number(env.CHAT_PORT || 8789),
+    bridgeHost: env.MAC_BRIDGE_HOST || env.CHAT_HOST || "127.0.0.1",
+    bridgeToken: env.MAC_BRIDGE_TOKEN || "",
     openai: {
       authMethod: env.OPENAI_AUTH_METHOD || "api_key",
       apiKey: env.OPENAI_API_KEY || "",
