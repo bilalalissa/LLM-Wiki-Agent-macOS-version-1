@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var snapWindows: [NSWindow] = []
     private var childWindows: [NSWindow] = []
     private weak var snapBoxView: NSView?
-    private weak var snapTextView: NSTextView?
+    private weak var snapTextView: NSTextField?
     private let closeBehaviorKey = "closeButtonKeepsRunning"
     private let hideSetupAlertKey = "hideSetupRequiredOnStartup"
     private let configPathKey = "configFilePath"
@@ -723,15 +723,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         scroll.hasVerticalScroller = textSize.height + 20 > scroll.frame.height
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
-        let textView = NSTextView(frame: scroll.bounds)
-        textView.isEditable = false
-        textView.drawsBackground = false
+        let textView = NSTextField(wrappingLabelWithString: text)
+        textView.frame = NSRect(x: 0, y: 0, width: scroll.frame.width - 20, height: max(scroll.frame.height, textSize.height + 24))
         textView.textColor = .white
         textView.font = NSFont.systemFont(ofSize: size, weight: .bold)
-        textView.string = text
-        textView.textContainerInset = NSSize(width: 10, height: 10)
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: scroll.frame.width - 20, height: CGFloat.greatestFiniteMagnitude)
+        textView.maximumNumberOfLines = 0
+        textView.lineBreakMode = .byWordWrapping
+        textView.isSelectable = true
+        textView.drawsBackground = false
         scroll.documentView = textView
         box.addSubview(scroll)
         snapTextView = textView

@@ -80,18 +80,17 @@ function extractSnippets(markdown, terms) {
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
-    .map((item) => firstUsefulSentence(item.section));
+    .map((item) => usefulSectionText(item.section));
 
   if (ranked.length) return ranked;
 
   const summary = sections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
-  return [firstUsefulSentence(summary || clean(markdown))].filter(Boolean);
+  return [usefulSectionText(summary || clean(markdown))].filter(Boolean);
 }
 
-function firstUsefulSentence(text) {
+function usefulSectionText(text) {
   const cleaned = clean(text).replace(/^#+\s*/, "");
-  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter((item) => item.length > 20);
-  return (sentences[0] || cleaned).slice(0, 420);
+  return cleaned;
 }
 
 function extractTitle(markdown, relativePath) {

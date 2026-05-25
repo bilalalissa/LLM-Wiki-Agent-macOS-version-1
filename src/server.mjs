@@ -2642,8 +2642,7 @@ function renderHtml() {
     }
 
     function selectionText(selection) {
-      const div = selectionClone(selection);
-      return div.textContent.replace(/\s+/g, " ").trim();
+      return selection.toString().replace(/\s+/g, " ").trim();
     }
 
     function htmlToMarkdown(html) {
