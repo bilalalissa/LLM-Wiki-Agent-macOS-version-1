@@ -31,6 +31,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - [Vault Setup](#vault-setup)
 - [Automatic Vault Bootstrap](#automatic-vault-bootstrap)
 - [AI Provider Setup](#ai-provider-setup)
+- [Shared Agent State And iPhone/iPad Bridge](#shared-agent-state-and-iphoneipad-bridge)
 - [How To Use The App](#how-to-use-the-app)
 - [Native macOS Features](#native-macos-features)
 - [Local `.env` And `.gitignore`](#local-env-and-gitignore)
@@ -55,6 +56,8 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - Provides a Snap focus overlay for magnified reading of selected result text.
 - Includes multiple UI themes, including Light, Dark, Sepia, Forest, Contrast, and Megatron.
 - Runs as a native macOS app with a menu bar icon and a local webview UI.
+- Shares non-secret vault settings through `.llm-wiki/settings.json` so macOS, iPad, iPhone, and future agents display the same agent state.
+- Exposes optional Mac Bridge endpoints for iPhone/iPad clients using subscription-backed Codex CLI AI.
 
 [Back to top](#top)
 
@@ -190,6 +193,49 @@ OPENAI_CODEX_COMMAND=codex
 ```
 
 Direct OpenAI and Anthropic APIs require API credentials and separate API billing.
+
+[Back to top](#top)
+
+## Shared Agent State And iPhone/iPad Bridge
+
+Every bootstrapped vault includes:
+
+```text
+.llm-wiki/settings.json
+```
+
+This manifest is shared by all agents and stores only non-secret settings: provider mode, transport label, default model, ingest/search preferences, display preferences, enabled wiki sections, and last-known agent metadata. API keys, OAuth tokens, Codex login state, bridge tokens, and local absolute paths stay in local app config or Keychain.
+
+The macOS app also acts as the Mac Bridge for iPhone/iPad clients. By default it listens only on this Mac:
+
+```text
+MAC_BRIDGE_HOST=127.0.0.1
+CHAT_PORT=8789
+MAC_BRIDGE_TOKEN=
+```
+
+To let an iPhone or iPad on the same local network connect, set:
+
+```text
+MAC_BRIDGE_HOST=0.0.0.0
+MAC_BRIDGE_TOKEN=choose-a-long-random-token
+```
+
+Then use this URL in the iPhone/iPad app's shared settings:
+
+```text
+http://<your-mac-local-ip>:8789
+```
+
+Store the same bridge token in the iPhone/iPad app's Settings screen. The token is kept in iOS Keychain and is not written into `.llm-wiki/settings.json`.
+
+Bridge endpoints:
+
+- `GET /api/vaults`
+- `GET /api/shared-settings`
+- `POST /api/shared-settings`
+- `GET /api/provider-status`
+- `POST /api/complete`
 
 [Back to top](#top)
 

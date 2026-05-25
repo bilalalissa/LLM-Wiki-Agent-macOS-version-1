@@ -8,7 +8,8 @@
     "watch": "node src/watch.mjs",
     "chat": "node src/chat.mjs",
     "serve": "node src/server.mjs",
-    "check": "node src/check.mjs"
+    "check": "node src/check.mjs",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"
