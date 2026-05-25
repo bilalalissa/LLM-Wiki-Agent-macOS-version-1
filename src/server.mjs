@@ -2119,7 +2119,7 @@ function renderHtml() {
       const text = selectedInfo?.text || window.getSelection()?.toString()?.trim() || "";
       if (!text) return;
       if (window.webkit?.messageHandlers?.snap) {
-        window.webkit.messageHandlers.snap.postMessage({ text, size: Number(snapSize.value || 34) });
+        window.webkit.messageHandlers.snap.postMessage({ text, html: selectedInfo?.html || "", size: Number(snapSize.value || 34) });
         clearTextSelection();
         hideSelectionTools();
         return;

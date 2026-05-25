@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var snapWindows: [NSWindow] = []
     private var childWindows: [NSWindow] = []
     private weak var snapBoxView: NSView?
-    private weak var snapTextView: NSTextField?
+    private weak var snapTextView: WKWebView?
     private let closeBehaviorKey = "closeButtonKeepsRunning"
     private let hideSetupAlertKey = "hideSetupRequiredOnStartup"
     private let configPathKey = "configFilePath"
@@ -73,9 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard message.name == "snap",
               let body = message.body as? [String: Any],
               let text = body["text"] as? String else { return }
+        let html = body["html"] as? String
         let bodySize = body["size"] as? Double
         let storedSize = UserDefaults.standard.double(forKey: snapSizeKey)
-        showNativeSnap(text: text, size: CGFloat(bodySize ?? (storedSize > 0 ? storedSize : 34)))
+        showNativeSnap(text: text, html: html, size: CGFloat(bodySize ?? (storedSize > 0 ? storedSize : 34)))
     }
 
     private func installStatusItem() {
@@ -652,7 +653,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    private func showNativeSnap(text: String, size: CGFloat) {
+    private func showNativeSnap(text: String, html: String?, size: CGFloat) {
         closeNativeSnap()
         let borderColor = randomSparkColor()
         for (index, screen) in NSScreen.screens.enumerated() {
@@ -670,14 +671,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             overlay.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             overlay.contentView = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
             if index == 0 {
-                addSnapBox(to: overlay, text: text, size: size, borderColor: borderColor)
+                addSnapBox(to: overlay, text: text, html: html, size: size, borderColor: borderColor)
             }
             overlay.makeKeyAndOrderFront(nil)
             snapWindows.append(overlay)
         }
     }
 
-    private func addSnapBox(to window: NSWindow, text: String, size: CGFloat, borderColor: NSColor) {
+    private func addSnapBox(to window: NSWindow, text: String, html: String?, size: CGFloat, borderColor: NSColor) {
         guard let content = window.contentView else { return }
         let margin: CGFloat = 50
         let maxWidth = content.bounds.width - margin * 2
@@ -719,20 +720,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         label.frame = NSRect(x: 18, y: 12, width: 48, height: 20)
         controls.addSubview(label)
 
-        let scroll = NSScrollView(frame: NSRect(x: 28, y: 28, width: width - 56, height: height - 112))
-        scroll.hasVerticalScroller = textSize.height + 20 > scroll.frame.height
-        scroll.hasHorizontalScroller = false
-        scroll.drawsBackground = false
-        let textView = NSTextField(wrappingLabelWithString: text)
-        textView.frame = NSRect(x: 0, y: 0, width: scroll.frame.width - 20, height: max(scroll.frame.height, textSize.height + 24))
-        textView.textColor = .white
-        textView.font = NSFont.systemFont(ofSize: size, weight: .bold)
-        textView.maximumNumberOfLines = 0
-        textView.lineBreakMode = .byWordWrapping
-        textView.isSelectable = true
-        textView.drawsBackground = false
-        scroll.documentView = textView
-        box.addSubview(scroll)
+        let webConfiguration = WKWebViewConfiguration()
+        let textView = WKWebView(frame: NSRect(x: 28, y: 28, width: width - 56, height: height - 112), configuration: webConfiguration)
+        textView.setValue(false, forKey: "drawsBackground")
+        textView.loadHTMLString(snapHTMLDocument(text: text, html: html, size: size), baseURL: nil)
+        box.addSubview(textView)
         snapTextView = textView
         snapBoxView = box
         content.addSubview(box)
@@ -742,7 +734,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func snapSliderChanged(_ sender: NSSlider) {
         let size = CGFloat(sender.doubleValue)
         UserDefaults.standard.set(Double(size), forKey: snapSizeKey)
-        snapTextView?.font = NSFont.systemFont(ofSize: size, weight: .bold)
+        snapTextView?.evaluateJavaScript("document.documentElement.style.setProperty('--snap-font-size', '\(Int(size))px')")
     }
 
     @objc private func closeNativeSnapAction() {
@@ -757,6 +749,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         snapWindows = []
         snapBoxView = nil
         snapTextView = nil
+    }
+
+    private func snapHTMLDocument(text: String, html: String?, size: CGFloat) -> String {
+        let body = (html?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? html!
+            : escapeHTML(text)
+        return """
+        <!doctype html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            :root { --snap-font-size: \(Int(size))px; }
+            html, body { margin: 0; padding: 0; background: transparent; color: #f8fbff; }
+            body {
+              box-sizing: border-box;
+              padding: 10px;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              font-size: var(--snap-font-size);
+              line-height: 1.35;
+              font-weight: 750;
+              letter-spacing: 0;
+              overflow-wrap: anywhere;
+              white-space: normal;
+            }
+            p, ul, ol { margin-top: 0; }
+            ul, ol { padding-left: 1.3em; }
+            .note-indicator, .note-popover { display: none !important; }
+            mark { background: transparent; color: inherit; }
+          </style>
+        </head>
+        <body>\(body)</body>
+        </html>
+        """
+    }
+
+    private func escapeHTML(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "\n", with: "<br>")
     }
 
     private func measuredSnapTextSize(text: String, fontSize: CGFloat, maxWidth: CGFloat) -> CGSize {

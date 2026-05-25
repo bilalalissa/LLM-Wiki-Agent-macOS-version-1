@@ -208,7 +208,9 @@ function learningItemsFromSection(section, kind, title, markdown) {
   if (current) items.push(current);
   const normalized = items.map((item) => ({
     question: item.question,
-    answer: item.answer || answerForQuestion(item.question, kind, title, markdown)
+    answer: item.answer && !isTruncatedAnswer(item.answer)
+      ? item.answer
+      : answerForQuestion(item.question, kind, title, markdown)
   }));
   for (const item of defaults) {
     if (!normalized.some((existing) => normalizeQuestion(existing.question) === normalizeQuestion(item.question))) {
@@ -371,7 +373,12 @@ function stripWiki(value) {
 function sentence(value) {
   const text = cleanSentencePart(value);
   if (!text) return "";
-  return text.length > 360 ? `${text.slice(0, 357).trim()}...` : `${text}.`;
+  return `${text}.`;
+}
+
+function isTruncatedAnswer(value) {
+  const text = String(value || "").trim();
+  return text.includes("...") || /\bbecau\.$/i.test(text);
 }
 
 function cleanSentencePart(value) {
@@ -387,7 +394,8 @@ function cleanAnswer(value) {
     .replace(/;\s+/g, "; ")
     .replace(/\.\.;/g, ";")
     .replace(/\.;/g, ";")
-    .replace(/\.{2,}/g, "...")
+    .replace(/\.{2,}\s+/g, ". ")
+    .replace(/\.{2,}$/g, ".")
     .replace(/\s+/g, " ")
     .trim();
 }
