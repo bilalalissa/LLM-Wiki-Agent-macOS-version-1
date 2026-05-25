@@ -629,7 +629,7 @@ function renderHtml() {
     details.local-nested > summary { cursor: pointer; padding: 8px 10px; font-weight: 700; background: var(--soft); }
     .local-nested-body { padding: 10px 12px; border-top: 1px solid var(--line); }
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .local-result-title { min-width: 0; }
+    .local-result-title, .local-nested-title { min-width: 0; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
     .dir-button { font: inherit; font-size: 11px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 3px 6px; cursor: pointer; }
     .dir-button:hover, .dir-button.active { color: var(--text); border-color: var(--accent); background: var(--soft); }
@@ -1878,14 +1878,17 @@ function renderHtml() {
       if (!button) return;
       event.preventDefault();
       event.stopPropagation();
-      const details = button.closest(".local-result");
+      const nested = button.closest(".local-nested");
+      const details = nested || button.closest(".local-result");
       const dir = button.dataset.dir || "auto";
       if (!details) return;
       const align = dir === "rtl" ? "right" : dir === "ltr" ? "left" : "";
       details.querySelectorAll(".dir-button").forEach((item) => item.classList.toggle("active", item === button));
-      setNodeDirection(details.querySelector(".local-result-body"), dir, align);
-      setNodeDirection(details.querySelector(".local-result-title"), dir, align);
-      details.querySelectorAll(".local-result-body li").forEach((item) => setNodeDirection(item, dir, align));
+      const body = nested ? details.querySelector(".local-nested-body") : details.querySelector(".local-result-body");
+      const title = nested ? details.querySelector(".local-nested-title") : details.querySelector(".local-result-title");
+      setNodeDirection(body, dir, align);
+      setNodeDirection(title, dir, align);
+      body?.querySelectorAll("p, li, h1, h2, h3, h4").forEach((item) => setNodeDirection(item, dir, align));
     });
 
     function renderLocalStructured(markdown) {
@@ -2016,8 +2019,8 @@ function renderHtml() {
         const open = index === 0 ? " open" : "";
         const body = section.lines.join("\\n").trim();
         return '<details class="local-nested"' + open + '>' +
-          '<summary>' + inlineMarkdown(section.title) + '</summary>' +
-          '<div class="local-nested-body">' +
+          '<summary><span class="local-result-heading"><span class="local-nested-title" dir="auto">' + inlineMarkdown(section.title) + '</span>' + renderDirectionControls() + '</span></summary>' +
+          '<div class="local-nested-body" dir="auto">' +
           (body ? renderMarkdown(body) : '<p class="muted">No content in this section.</p>') +
           '</div></details>';
       }).join("");
