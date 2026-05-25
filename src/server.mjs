@@ -613,6 +613,8 @@ function renderHtml() {
     .answer ul, .answer ol { margin-top: 0; padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
     .local-result-body > ul { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; list-style-position: inside; padding-inline-start: 0; padding-inline-end: 0; }
     .local-result-body > ul > li { margin: 0 0 4px; }
+    .local-result-body h1, .local-result-body h2, .local-result-body h3 { margin: 16px 0 8px; }
+    .local-result-body h1:first-child, .local-result-body h2:first-child, .local-result-body h3:first-child { margin-top: 0; }
     .local-result-body[dir="rtl"] > ul, .local-result-body[data-align="right"] > ul { padding-inline-start: 0; padding-inline-end: 1.4em; list-style-position: inside; }
     .local-result-body[dir="ltr"] > ul, .local-result-body[data-align="left"] > ul { padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
     .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
@@ -622,7 +624,7 @@ function renderHtml() {
     .local-tree-type { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 12px; }
     details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
     details.local-result > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
-    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; overflow: hidden; }
+    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; overflow: visible; }
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .local-result-title { min-width: 0; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
@@ -1901,22 +1903,23 @@ function renderHtml() {
       const footer = [];
       let current = null;
       let mode = "intro";
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
         const heading = line.match(/^##\\s+(.+)$/);
-        if (heading) {
+        if (heading && isLocalResultHeading(lines, i)) {
           if (current) results.push(current);
-          current = { title: heading[1].trim(), ref: "", snippets: [] };
+          current = { title: heading[1].trim(), ref: "", body: [] };
           mode = "result";
           continue;
         }
         if (mode === "result" && current) {
-          if (!current.ref && /^[A-Za-z0-9_-]+-vault\\s+\\/\\s+wiki\\/.+/.test(line.trim())) {
+          if (!current.ref && isLocalSourceRef(line.trim())) {
             current.ref = line.trim();
-          } else if (/^\\s*[-*]\\s+/.test(line)) {
-            current.snippets.push(line.replace(/^\\s*[-*]\\s+/, "").trim());
-          } else if (line.trim() && current.ref) {
+          } else if (/^This answer was generated locally/i.test(line.trim())) {
             footer.push(line.trim());
             mode = "footer";
+          } else if (current.ref) {
+            current.body.push(line);
           }
         } else if (mode === "intro") {
           if (line.trim()) intro.push(line.trim());
@@ -1930,6 +1933,19 @@ function renderHtml() {
         results,
         footer: footer.join(" ")
       };
+    }
+
+    function isLocalResultHeading(lines, index) {
+      for (let i = index + 1; i < lines.length; i += 1) {
+        const next = lines[i].trim();
+        if (!next) continue;
+        return isLocalSourceRef(next);
+      }
+      return false;
+    }
+
+    function isLocalSourceRef(value) {
+      return /^[A-Za-z0-9_-]+-vault\\s+\\/\\s+wiki\\/.+/.test(String(value || "").trim());
     }
 
     function renderLocalAccordion(results) {
@@ -1965,12 +1981,12 @@ function renderHtml() {
 
     function renderLocalResultDetails(result, index) {
       const open = shouldOpenLocalResult(index) ? " open" : "";
-      const snippets = result.snippets.length ? result.snippets : ["No snippet available."];
+      const body = result.body.join("\\n").trim();
       return '<details class="local-result"' + open + '>' +
         '<summary><span class="local-result-heading"><span class="local-result-title" dir="auto">' + escapeHtml(result.title) + '</span>' + renderDirectionControls() + '</span></summary>' +
         '<div class="local-result-body" dir="auto">' +
         (result.ref ? '<p class="source-ref" dir="ltr">' + inlineMarkdown(result.ref) + '</p>' : '') +
-        '<ul>' + snippets.map((snippet) => '<li dir="auto">' + inlineMarkdown(snippet) + '</li>').join("") + '</ul>' +
+        (body ? renderMarkdown(body) : '<p class="muted">No readable page content found.</p>') +
         '</div></details>';
     }
 

@@ -27,9 +27,7 @@ export function answerLocally(question, config) {
     lines.push(`## ${match.title}`);
     lines.push(`${match.vault} / ${match.relativePath}`);
     lines.push("");
-    for (const snippet of match.snippets) {
-      lines.push(`- ${snippet}`);
-    }
+    lines.push(match.content || "No readable page content found.");
     lines.push("");
   }
 
@@ -51,7 +49,7 @@ function findMatches(terms, config) {
         relativePath,
         title: extractTitle(fullText, relativePath),
         score,
-        snippets: extractSnippets(fullText, terms)
+        content: localPageContent(fullText)
       });
     }
   }
@@ -68,29 +66,10 @@ function scoreText(text, terms) {
   return score;
 }
 
-function extractSnippets(markdown, terms) {
-  const sections = markdown
+function localPageContent(markdown) {
+  return stripUserNotes(String(markdown || ""))
     .replace(/^---[\s\S]*?---\s*/m, "")
-    .split(/\n(?=##?\s+)/)
-    .map((section) => clean(section))
-    .filter(Boolean);
-
-  const ranked = sections
-    .map((section) => ({ section, score: scoreText(section, terms) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((item) => usefulSectionText(item.section));
-
-  if (ranked.length) return ranked;
-
-  const summary = sections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
-  return [usefulSectionText(summary || clean(markdown))].filter(Boolean);
-}
-
-function usefulSectionText(text) {
-  const cleaned = clean(text).replace(/^#+\s*/, "");
-  return cleaned;
+    .trim();
 }
 
 function extractTitle(markdown, relativePath) {
