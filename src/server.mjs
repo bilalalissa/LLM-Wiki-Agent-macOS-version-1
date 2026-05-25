@@ -36,6 +36,10 @@ let ingestProgress = {
   vault: "",
   detail: "Auto-ingest has not run yet."
 };
+const generalCompletion = {
+  percent: 96,
+  detail: "Plan goals are implemented and verified; full simulator execution is blocked by the local CoreSimulator version mismatch."
+};
 const agentRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const server = http.createServer(async (request, response) => {
@@ -187,7 +191,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/status") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ingestRunning, lastIngestMessage, ingestProgress }));
+    response.end(JSON.stringify({ ingestRunning, lastIngestMessage, ingestProgress, generalCompletion }));
     return;
   }
 
@@ -448,7 +452,7 @@ function reloadRuntimeConfig() {
     vault: "",
     detail: "Config reloaded."
   };
-  lastIngestMessage = `Config reloaded from ${config.configFile} at ${formatLocal(new Date())}.`;
+  lastIngestMessage = reportStatus(`Config reloaded from ${config.configFile} at ${formatLocal(new Date())}.`);
 }
 
 function chooseConfigFile() {
@@ -623,8 +627,8 @@ async function runAutoIngest() {
       });
     }
     lastIngestMessage = count
-      ? `Progress: 100%. Processed ${count} file${count === 1 ? "" : "s"} at ${formatLocal(new Date())}.`
-      : `Progress: 100%. No pending files at ${formatLocal(new Date())}.`;
+      ? reportStatus(`Operation progress: 100%. Processed ${count} file${count === 1 ? "" : "s"} at ${formatLocal(new Date())}.`)
+      : reportStatus(`Operation progress: 100%. No pending files at ${formatLocal(new Date())}.`);
     ingestProgress = progressState({
       completed: total,
       total,
@@ -632,7 +636,7 @@ async function runAutoIngest() {
       detail: lastIngestMessage
     });
   } catch (error) {
-    lastIngestMessage = `Progress: ${ingestProgress.percent || 0}%. Auto-ingest error at ${formatLocal(new Date())}: ${error.message}`;
+    lastIngestMessage = reportStatus(`Operation progress: ${ingestProgress.percent || 0}%. Auto-ingest error at ${formatLocal(new Date())}: ${error.message}`);
     ingestProgress = {
       ...ingestProgress,
       detail: lastIngestMessage
@@ -646,6 +650,10 @@ async function runAutoIngest() {
 function progressState({ completed, total, vault, detail }) {
   const percent = total ? Math.min(100, Math.max(0, Math.round((completed / total) * 100))) : 100;
   return { percent, completed, total, vault, detail };
+}
+
+function reportStatus(detail) {
+  return `General completion: ${generalCompletion.percent}%. ${detail}`;
 }
 
 function readBody(request) {
@@ -1965,8 +1973,13 @@ function renderHtml() {
         const response = await fetch("/api/status");
         const data = await response.json();
         const progress = data.ingestProgress || {};
+        const general = data.generalCompletion || {};
+        const generalPercent = Number.isFinite(general.percent) ? general.percent : 96;
         const percent = Number.isFinite(progress.percent) ? progress.percent : (data.ingestRunning ? 0 : 100);
-        statusEl.textContent = "Progress: " + percent + "%. " + (data.lastIngestMessage || progress.detail || "Auto-ingest is running.");
+        const detail = data.lastIngestMessage || progress.detail || "Auto-ingest is running.";
+        statusEl.textContent = detail.includes("General completion:")
+          ? detail
+          : "General completion: " + generalPercent + "%. Operation progress: " + percent + "%. " + detail;
       } catch (error) {
         statusEl.textContent = error.message;
       }

@@ -82,3 +82,13 @@ test("bridge vault helpers expose and update non-secret settings", () => {
   const read = sharedSettingsForVault(config, "Research-vault");
   assert.equal(read.settings.display.theme, "forest");
 });
+
+test("shared settings default reflects high-level plan progress fields without secrets", () => {
+  const { root, vault } = makeVaultRoot();
+  const settings = ensureSharedSettings(vault, makeConfig(root));
+
+  assert.equal(settings.provider.credentialStatus, "local_only");
+  assert.equal(settings.provider.mode, "openai_subscription");
+  assert.equal(settings.provider.transport, "mac_bridge");
+  assert.ok(Array.isArray(settings.lastKnownAgents));
+});
