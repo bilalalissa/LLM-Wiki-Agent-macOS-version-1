@@ -22,13 +22,20 @@ import { mergeSources } from "./source-merge.mjs";
 import { renameSource } from "./source-rename.mjs";
 import { topicContent } from "./topic-content.mjs";
 import { listTopics } from "./topics.mjs";
-import { listVaults, vaultName } from "./vaults.mjs";
+import { listRawCandidates, listVaults, vaultName } from "./vaults.mjs";
 import { bootstrapVault } from "./vault-bootstrap.mjs";
 
 let config = getConfig();
 let provider = createProvider(config);
 let ingestRunning = false;
 let lastIngestMessage = "Auto-ingest has not run yet.";
+let ingestProgress = {
+  percent: 0,
+  completed: 0,
+  total: 0,
+  vault: "",
+  detail: "Auto-ingest has not run yet."
+};
 const agentRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const server = http.createServer(async (request, response) => {
@@ -180,7 +187,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/status") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ingestRunning, lastIngestMessage }));
+    response.end(JSON.stringify({ ingestRunning, lastIngestMessage, ingestProgress }));
     return;
   }
 
@@ -434,6 +441,13 @@ function startAutoIngest() {
 function reloadRuntimeConfig() {
   config = getConfig();
   provider = createProvider(config);
+  ingestProgress = {
+    percent: 100,
+    completed: 0,
+    total: 0,
+    vault: "",
+    detail: "Config reloaded."
+  };
   lastIngestMessage = `Config reloaded from ${config.configFile} at ${formatLocal(new Date())}.`;
 }
 
@@ -573,26 +587,65 @@ async function runAutoIngest() {
   ingestRunning = true;
   try {
     let count = 0;
-    for (const vault of listVaults(config.vaultsRoot)) {
+    const vaults = listVaults(config.vaultsRoot);
+    const candidateCounts = vaults.map((vault) => listRawCandidates(vault).length);
+    const total = candidateCounts.reduce((sum, item) => sum + item, 0);
+    let completed = 0;
+    ingestProgress = {
+      percent: total ? 0 : 100,
+      completed,
+      total,
+      vault: "",
+      detail: total ? "Auto-ingest started." : "No pending files."
+    };
+    for (const [index, vault] of vaults.entries()) {
       const bootstrapped = bootstrapVault(vault, config);
       if (bootstrapped.length) {
         console.log(`[bootstrap] ${vaultName(vault)}: ${bootstrapped.join(", ")}`);
       }
+      ingestProgress = progressState({
+        completed,
+        total,
+        vault: vaultName(vault),
+        detail: `Scanning ${vaultName(vault)}.`
+      });
       const results = await ingestVault(vault, config, provider);
+      completed += candidateCounts[index];
       count += results.length;
       for (const result of results) {
         console.log(`[auto-ingest] ${result.vault}: ${result.source} -> ${result.sourcePage}`);
       }
+      ingestProgress = progressState({
+        completed,
+        total,
+        vault: vaultName(vault),
+        detail: `Finished ${vaultName(vault)}.`
+      });
     }
     lastIngestMessage = count
-      ? `Processed ${count} file${count === 1 ? "" : "s"} at ${formatLocal(new Date())}.`
-      : `No pending files at ${formatLocal(new Date())}.`;
+      ? `Progress: 100%. Processed ${count} file${count === 1 ? "" : "s"} at ${formatLocal(new Date())}.`
+      : `Progress: 100%. No pending files at ${formatLocal(new Date())}.`;
+    ingestProgress = progressState({
+      completed: total,
+      total,
+      vault: "",
+      detail: lastIngestMessage
+    });
   } catch (error) {
-    lastIngestMessage = `Auto-ingest error at ${formatLocal(new Date())}: ${error.message}`;
+    lastIngestMessage = `Progress: ${ingestProgress.percent || 0}%. Auto-ingest error at ${formatLocal(new Date())}: ${error.message}`;
+    ingestProgress = {
+      ...ingestProgress,
+      detail: lastIngestMessage
+    };
     console.error(`[auto-ingest] ${error.stack || error.message}`);
   } finally {
     ingestRunning = false;
   }
+}
+
+function progressState({ completed, total, vault, detail }) {
+  const percent = total ? Math.min(100, Math.max(0, Math.round((completed / total) * 100))) : 100;
+  return { percent, completed, total, vault, detail };
 }
 
 function readBody(request) {
@@ -1911,7 +1964,9 @@ function renderHtml() {
       try {
         const response = await fetch("/api/status");
         const data = await response.json();
-        statusEl.textContent = data.lastIngestMessage || "Auto-ingest is running.";
+        const progress = data.ingestProgress || {};
+        const percent = Number.isFinite(progress.percent) ? progress.percent : (data.ingestRunning ? 0 : 100);
+        statusEl.textContent = "Progress: " + percent + "%. " + (data.lastIngestMessage || progress.detail || "Auto-ingest is running.");
       } catch (error) {
         statusEl.textContent = error.message;
       }
