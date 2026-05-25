@@ -611,23 +611,27 @@ function renderHtml() {
     .answer [data-align="left"] { text-align: left; }
     .answer p { margin: 0 0 12px; }
     .answer ul, .answer ol { margin-top: 0; padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
-    .local-result-body > ul { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; list-style-position: inside; padding-inline-start: 0; padding-inline-end: 0; }
-    .local-result-body > ul > li { margin: 0 0 4px; }
+    .answer li { overflow-wrap: anywhere; }
+    .answer li.qa-question { margin-top: 12px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+    .answer li.qa-question:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+    .answer li.qa-answer { margin-top: 4px; margin-inline-start: 1.2em; }
+    .local-result-body > ul, .local-nested-body > ul { box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere; list-style-position: outside; padding-inline-start: 1.4em; padding-inline-end: 0; }
+    .local-result-body > ul > li, .local-nested-body > ul > li { margin: 0 0 4px; }
     .local-result-body h1, .local-result-body h2, .local-result-body h3 { margin: 16px 0 8px; }
     .local-result-body h1:first-child, .local-result-body h2:first-child, .local-result-body h3:first-child { margin-top: 0; }
-    .local-result-body[dir="rtl"] > ul, .local-result-body[data-align="right"] > ul { padding-inline-start: 0; padding-inline-end: 1.4em; list-style-position: inside; }
-    .local-result-body[dir="ltr"] > ul, .local-result-body[data-align="left"] > ul { padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
+    .local-result-body[dir="rtl"] > ul, .local-result-body[data-align="right"] > ul, .local-nested-body[dir="rtl"] > ul, .local-nested-body[data-align="right"] > ul { padding-inline-start: 0; padding-inline-end: 1.4em; list-style-position: outside; }
+    .local-result-body[dir="ltr"] > ul, .local-result-body[data-align="left"] > ul, .local-nested-body[dir="ltr"] > ul, .local-nested-body[data-align="left"] > ul { padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
     .answer hr.result-separator { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
     .local-display-tools { justify-content: flex-start; margin-top: 0; }
     .local-tree { display: grid; gap: 10px; }
     .local-tree-vault { border-left: 3px solid var(--line); padding-left: 12px; }
     .local-tree-type { margin-left: 10px; border-left: 1px solid var(--line); padding-left: 12px; }
-    details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
+    details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; max-width: 100%; box-sizing: border-box; overflow: clip; }
     details.local-result > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
-    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; overflow: visible; }
-    details.local-nested { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
+    .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; overflow: clip; max-width: 100%; box-sizing: border-box; }
+    details.local-nested { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; max-width: 100%; box-sizing: border-box; overflow: clip; }
     details.local-nested > summary { cursor: pointer; padding: 8px 10px; font-weight: 700; background: var(--soft); }
-    .local-nested-body { padding: 10px 12px; border-top: 1px solid var(--line); }
+    .local-nested-body { padding: 10px 12px; border-top: 1px solid var(--line); overflow: clip; max-width: 100%; box-sizing: border-box; }
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .local-result-title, .local-nested-title { min-width: 0; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
@@ -1835,7 +1839,8 @@ function renderHtml() {
             html.push("<ul>");
             inList = true;
           }
-          html.push("<li>" + inlineMarkdown(line.replace(/^\\s*[-*]\\s+/, "")) + "</li>");
+          const item = line.replace(/^\\s*[-*]\\s+/, "");
+          html.push('<li class="' + listItemClass(item) + '">' + inlineMarkdown(item) + "</li>");
           continue;
         }
         if (inList) {
@@ -2080,6 +2085,12 @@ function renderHtml() {
         .replace(/\\*([^*]+)\\*/g, "<em>$1</em>")
         .replace(/\\x60([^\\x60]+)\\x60/g, "<code>$1</code>")
         .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, "$1");
+    }
+
+    function listItemClass(value) {
+      if (/^Q:\\s*/i.test(String(value || ""))) return "qa-question";
+      if (/^A:\\s*/i.test(String(value || ""))) return "qa-answer";
+      return "";
     }
 
     function escapeHtml(value) {
@@ -2390,6 +2401,7 @@ function renderHtml() {
           '<button class="secondary note-toggle" type="button">Hide</button>' +
           '<button class="secondary note-save-edit" type="button">Save</button>' +
           '<button class="secondary note-delete" type="button">Delete</button>' +
+          '<span class="copy-feedback note-edit-feedback"></span>' +
         '</div>' +
       '</div>').join("");
       notesList.querySelectorAll(".note-card").forEach((card) => wireNoteCard(card));
@@ -2404,12 +2416,19 @@ function renderHtml() {
         event.target.textContent = hidden ? "Hide" : "Show";
       });
       card.querySelector(".note-save-edit").addEventListener("click", async () => {
-        await fetch("/api/notes/update", {
+        const feedback = card.querySelector(".note-edit-feedback");
+        const response = await fetch("/api/notes/update", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id, note: textarea.value })
         });
-        loadNotes();
+        if (!response.ok) {
+          feedback.textContent = "Save failed";
+          setTimeout(() => { feedback.textContent = ""; }, 2000);
+          return;
+        }
+        feedback.textContent = "Saved";
+        setTimeout(() => { loadNotes(); }, 600);
       });
       card.querySelector(".note-delete").addEventListener("click", async () => {
         await fetch("/api/notes/delete", {

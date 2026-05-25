@@ -775,7 +775,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
               white-space: normal;
             }
             p, ul, ol { margin-top: 0; }
-            ul, ol { padding-left: 1.3em; }
+            ul, ol { padding-inline-start: 1.4em; padding-inline-end: 0; list-style-position: outside; }
+            li { overflow-wrap: anywhere; }
+            li.qa-question { margin-top: 0.75em; padding-top: 0.55em; border-top: 1px solid rgba(248, 251, 255, 0.22); }
+            li.qa-question:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+            li.qa-answer { margin-top: 0.25em; margin-inline-start: 1.2em; }
+            [dir="rtl"] ul, [dir="rtl"] ol, [data-align="right"] ul, [data-align="right"] ol { padding-inline-start: 0; padding-inline-end: 1.4em; }
             .note-indicator, .note-popover { display: none !important; }
             mark { background: transparent; color: inherit; }
           </style>
