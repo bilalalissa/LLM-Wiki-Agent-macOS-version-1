@@ -42,12 +42,12 @@ function codexCliProvider(options, model) {
   }
   return {
     name: "codex-cli",
-    async complete(messages) {
+    async complete(messages, { allowTools = false } = {}) {
       return runCodexExec({
         command: options.codexCommand || "codex",
         model,
         timeoutMs: options.codexTimeoutMs || 180000,
-        prompt: codexPrompt(messages)
+        prompt: codexPrompt(messages, { allowTools })
       });
     }
   };
@@ -127,10 +127,12 @@ function runCodexExec({ command, model, timeoutMs, prompt }) {
   });
 }
 
-function codexPrompt(messages) {
+function codexPrompt(messages, { allowTools = false } = {}) {
   const lines = [
     "You are answering inside a local Obsidian LLM Wiki agent.",
-    "Return only the final answer for the user. Do not edit files, run commands, or describe tool usage.",
+    allowTools
+      ? "You may inspect read-only local files referenced in the prompt. Do not edit files. Return only the final answer for the user."
+      : "Return only the final answer for the user. Do not edit files, run commands, or describe tool usage.",
     ""
   ];
   for (const message of messages) {

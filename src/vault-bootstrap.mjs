@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { today } from "./vaults.mjs";
+import { ensureSharedSettings } from "./shared-settings.mjs";
 
-export function bootstrapVault(vaultPath) {
+export function bootstrapVault(vaultPath, config = {}) {
   const created = [];
   for (const dir of [
     "raw/inbox",
@@ -10,6 +11,7 @@ export function bootstrapVault(vaultPath) {
     "raw/processed",
     "raw/processed/archive",
     "raw/assets",
+    "raw/assets/archive",
     "wiki/sources",
     "wiki/entities",
     "wiki/concepts",
@@ -19,7 +21,8 @@ export function bootstrapVault(vaultPath) {
     "wiki/synthesis",
     "wiki/maps",
     "wiki/archive",
-    "templates"
+    "templates",
+    ".llm-wiki"
   ]) {
     const full = path.join(vaultPath, dir);
     if (!fs.existsSync(full)) {
@@ -28,10 +31,41 @@ export function bootstrapVault(vaultPath) {
     }
   }
   ensureFile(vaultPath, "AGENTS.md", agentsTemplate(), created);
+  ensureAgentsMediaRules(vaultPath, created);
+  ensureAgentsLearningRules(vaultPath, created);
+  ensureAgentsSharedStateRules(vaultPath, created);
   ensureFile(vaultPath, "CLAUDE.md", "See [[AGENTS]] for the LLM Wiki operating schema.\n", created);
   ensureFile(vaultPath, "index.md", indexTemplate(), created);
   ensureFile(vaultPath, "log.md", logTemplate(), created);
+  ensureSharedSettings(vaultPath, config);
   return created;
+}
+
+function ensureAgentsLearningRules(vaultPath, created) {
+  const file = path.join(vaultPath, "AGENTS.md");
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, "utf8");
+  if (text.includes("## Learning Sections")) return;
+  fs.writeFileSync(file, `${text.trim()}\n\n${learningSectionsTemplate()}\n`);
+  created.push("AGENTS.md learning rules");
+}
+
+function ensureAgentsMediaRules(vaultPath, created) {
+  const file = path.join(vaultPath, "AGENTS.md");
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, "utf8");
+  if (text.includes("## Media Ingest Rules")) return;
+  fs.writeFileSync(file, `${text.trim()}\n\n${mediaRulesTemplate()}\n`);
+  created.push("AGENTS.md media rules");
+}
+
+function ensureAgentsSharedStateRules(vaultPath, created) {
+  const file = path.join(vaultPath, "AGENTS.md");
+  if (!fs.existsSync(file)) return;
+  const text = fs.readFileSync(file, "utf8");
+  if (text.includes("## Shared Agent State")) return;
+  fs.writeFileSync(file, `${text.trim()}\n\n${sharedAgentStateTemplate()}\n`);
+  created.push("AGENTS.md shared state rules");
 }
 
 function ensureFile(vaultPath, rel, content, created) {
@@ -81,7 +115,7 @@ The agent must:
 
 - Treat \`raw/\` as immutable source material.
 - Treat \`wiki/\` as the agent-owned synthesis layer.
-- Read \`index.md\` before answering wiki questions or changing wiki pages.
+- Read \`.llm-wiki/settings.json\` and \`index.md\` before answering wiki questions or changing wiki pages.
 - Append every ingest, query, lint pass, and structural change to \`log.md\`.
 - Keep pages interlinked with Obsidian wiki links.
 - Preserve source traceability for factual claims.
@@ -95,7 +129,7 @@ raw/
   inbox/        New sources waiting to be ingested.
   input/        Agent-saved chat answers waiting to be ingested.
   processed/    Sources already ingested. Preserve original content.
-  assets/       Local images, PDFs, audio, screenshots, and downloaded attachments.
+  assets/       Processed local images, PDFs, audio, screenshots, video, and downloaded attachments.
 
 wiki/
   sources/      One summary page per ingested source.
@@ -109,6 +143,8 @@ wiki/
   archive/      Retired or superseded wiki pages.
 
 templates/      Reusable page templates.
+.llm-wiki/settings.json
+               Shared non-secret agent settings for macOS, iPad, iPhone, and future agents.
 index.md        Content-oriented catalog of the wiki.
 log.md          Append-only chronological maintenance record.
 AGENTS.md       This schema.
@@ -121,14 +157,30 @@ Every generated wiki page should include YAML frontmatter with \`type\`, \`statu
 
 Use source-backed claims and Obsidian wiki links. Never present an inference as a source fact.
 
+${sharedAgentStateTemplate()}
+
+## Language Rules
+
+- Detect each source's primary language.
+- Write generated source-page content in the source's primary language, including summaries, key points, open questions, contradictions, and learning Q/A.
+- If a source is meaningfully multilingual, preserve the source languages where they carry meaning.
+- Keep stable schema headings such as \`Summary\`, \`Key Points\`, and \`Open Questions\` unchanged unless the user explicitly changes the schema.
+- Add or preserve a \`language\` frontmatter value when generating source pages.
+
+${learningSectionsTemplate()}
+
 ## Ingest Workflow
 
 1. Read the raw source.
 2. Create one source summary page in \`wiki/sources/\`.
 3. Update or create affected concept/entity/area/question/synthesis pages.
-4. Move the source to \`raw/processed/\`.
+4. Move text sources to \`raw/processed/\` and media sources to \`raw/assets/\`.
 5. Update \`index.md\`.
 6. Append an ingest entry to \`log.md\`.
+
+## Media Ingest Rules
+
+${mediaRulesTemplate().replace("## Media Ingest Rules\n\n", "")}
 
 ## Query Workflow
 
@@ -138,4 +190,48 @@ Use source-backed claims and Obsidian wiki links. Never present an inference as 
 4. File durable answers back into the wiki when useful.
 5. Append a query entry to \`log.md\`.
 `;
+}
+
+function learningSectionsTemplate() {
+  return `## Learning Sections
+
+Generated source pages and generated linked wiki pages should include these structural sections when useful:
+
+- \`Open Questions\`: unresolved source or wiki maintenance questions with current answers or explicit unresolved status.
+- \`Contradictions\`: source conflicts, tension, or "None yet."
+- \`Source's Related Learning Questions\`: source-grounded questions and answers that help the user practice, connect, and retain the material.
+- \`Open Learning Questions\`: broader questions and answers that expand knowledge, transfer, and global awareness beyond the source.
+
+Each learning item should use this format:
+
+\`\`\`md
+- Q: Question text?
+  - A: Source-grounded answer text.
+\`\`\`
+
+Learning questions must be phrased as questions, not claims. Answers must remain source-grounded, distinguish uncertainty from fact, and help the user discover adjacent domains, real-world implications, history, geography, ethics, systems, or cross-topic links without inventing facts.`;
+}
+
+function sharedAgentStateTemplate() {
+  return `## Shared Agent State
+
+All agents that operate on this vault must read \`.llm-wiki/settings.json\` before ingest, chat, search, or maintenance. The file stores only non-secret settings so macOS, iPad, iPhone, and future agents can display the same provider mode, model label, ingest/search preferences, display preferences, enabled wiki sections, and last-known agent metadata.
+
+Secrets such as API keys, OAuth tokens, local absolute paths, bridge tokens, and subscription credentials must remain in local app storage or Keychain. The shared manifest may only record safe labels such as \`provider: openai_subscription\`, \`provider_transport: mac_bridge\`, and \`credential_status: local_only\`.
+
+Agents must display the shared settings in their Provider or Settings screen, preserve compatibility by bootstrapping the manifest when missing, and append meaningful cross-agent writes to \`log.md\`.`;
+}
+
+function mediaRulesTemplate() {
+  return `## Media Ingest Rules
+
+When a new source in \`raw/\`, \`raw/inbox/\`, or \`raw/input/\` is an image, PDF, audio file, video, screenshot, or other local media:
+
+1. Move the media file to \`raw/assets/\` unless it is already there.
+2. Create a source page in \`wiki/sources/\` with \`type: source\`, \`media_kind\`, \`source_path\`, and media tags.
+3. Ask the configured provider to inspect/analyze the local media in read-only mode when possible.
+4. Embed images directly in the source page with an Obsidian embed and link every media type back to its local asset.
+5. Add any reliable visual/audio observations only when the agent has actually inspected the media or the human supplied a description.
+6. Link the media source page to relevant concepts, entities, areas, questions, or project pages when the content is known.
+7. Never discard media. Archive retired media under \`raw/assets/archive/\`.`;
 }

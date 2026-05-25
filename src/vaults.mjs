@@ -40,12 +40,15 @@ export function ensureDir(dir) {
 }
 
 export function slugify(input) {
-  return input
+  return String(input || "")
+    .normalize("NFC")
     .toLowerCase()
     .replace(/['"]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[\/\\:*?"<>|\u0000-\u001f]+/g, "-")
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 80) || "untitled";
+    .slice(0, 80)
+    .replace(/^-+|-+$/g, "") || "untitled";
 }
 
 export function today() {
@@ -61,8 +64,40 @@ export function listRawCandidates(vaultPath) {
     const rel = path.relative(rawDir, file);
     if (rel.startsWith(`processed${path.sep}`)) return false;
     if (rel.startsWith(`assets${path.sep}`)) return false;
-    return file.endsWith(".md") || file.endsWith(".txt");
+    return isIngestibleRawFile(file);
   });
+}
+
+const ingestibleExtensions = new Set([
+  ".md",
+  ".txt",
+  ".markdown",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".pdf",
+  ".mp3",
+  ".wav",
+  ".m4a",
+  ".aiff",
+  ".mp4",
+  ".mov",
+  ".m4v"
+]);
+
+export function isIngestibleRawFile(file) {
+  return ingestibleExtensions.has(path.extname(file).toLowerCase());
+}
+
+export function isTextRawFile(file) {
+  return new Set([".md", ".txt", ".markdown"]).has(path.extname(file).toLowerCase());
+}
+
+export function isMediaRawFile(file) {
+  return isIngestibleRawFile(file) && !isTextRawFile(file);
 }
 
 function walk(dir, result) {

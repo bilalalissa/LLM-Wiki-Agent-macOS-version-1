@@ -43,7 +43,7 @@ function normalizeRel(value) {
 }
 
 function isArchiveRel(rel) {
-  return rel.startsWith("raw/processed/archive/") || rel.startsWith("wiki/archive/");
+  return rel.startsWith("raw/processed/archive/") || rel.startsWith("raw/assets/archive/") || rel.startsWith("wiki/archive/");
 }
 
 function appendMaintenanceLog(vaultPath, rel) {

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { listVaults, listWikiFiles, vaultName } from "./vaults.mjs";
+import { listVaults, listWikiFiles, slugify, vaultName } from "./vaults.mjs";
 
 const START = "<!-- agent-note:";
 const END = "<!-- /agent-note:";
@@ -64,6 +64,34 @@ export function deleteNote(config, id) {
   return { ok: true };
 }
 
+export function saveNoteMedia(config, input) {
+  const target = resolveTarget(config, input.vault, input.path);
+  const filename = safeFilename(input.filename || "note-media.bin");
+  const dataUrl = String(input.data || "");
+  const match = dataUrl.match(/^data:([^;,]+)?(;base64)?,([\s\S]+)$/);
+  if (!match) throw new Error("Unsupported media data.");
+  const isBase64 = Boolean(match[2]);
+  const bytes = isBase64 ? Buffer.from(match[3], "base64") : Buffer.from(decodeURIComponent(match[3]), "utf8");
+  if (bytes.length > 15 * 1024 * 1024) throw new Error("Media note attachment is larger than 15 MB.");
+
+  const dirRel = "raw/assets/user-notes";
+  const vaultRoot = resolveVaultPath(config, target.vault);
+  const fullDir = path.join(vaultRoot, dirRel);
+  fs.mkdirSync(fullDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const parsed = path.parse(filename);
+  const outName = `${stamp}--${slugify(parsed.name)}${parsed.ext || ".bin"}`;
+  const outPath = uniquePath(path.join(fullDir, outName));
+  fs.writeFileSync(outPath, bytes);
+  const rel = path.relative(vaultRoot, outPath).replace(/\\/g, "/");
+  return {
+    vault: target.vault,
+    path: target.relativePath,
+    file: rel,
+    markdown: mediaMarkdown(rel, filename)
+  };
+}
+
 function resolveTarget(config, vaultNameInput, relativePathInput) {
   const vaults = listVaults(config.vaultsRoot);
   let vaultPath = vaults.find((item) => vaultName(item) === vaultNameInput);
@@ -75,6 +103,12 @@ function resolveTarget(config, vaultNameInput, relativePathInput) {
   const file = path.join(vaultPath, relativePath);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   return { vault: vaultName(vaultPath), relativePath, file };
+}
+
+function resolveVaultPath(config, name) {
+  const vaultPath = listVaults(config.vaultsRoot).find((item) => vaultName(item) === name);
+  if (!vaultPath) throw new Error(`Unknown vault: ${name}`);
+  return vaultPath;
 }
 
 function findNoteFile(config, id) {
@@ -118,7 +152,8 @@ function renderBlock(note) {
   return `${START}${note.id} -->
 > [!note] Agent UI note
 > **Selected:** ${singleLine(note.selectedText)}
-> **Note:** ${singleLine(note.note)}
+> **Note:**
+${quoteBlock(note.note)}
 > **Occurrence:** ${Number(note.occurrence || 0)}
 > **Created:** ${note.created}
 > **Updated:** ${note.updated}
@@ -136,6 +171,35 @@ function cleanupEmptyUserNotes(text) {
 
 function singleLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function quoteBlock(value) {
+  const text = String(value || "").trim();
+  return (text || " ").split(/\r?\n/).map((line) => `> ${line}`).join("\n");
+}
+
+function safeFilename(value) {
+  const parsed = path.parse(String(value || "note-media.bin").replace(/[/\\]/g, "-"));
+  return `${slugify(parsed.name)}${parsed.ext || ".bin"}`;
+}
+
+function mediaMarkdown(rel, originalName) {
+  const ext = path.extname(rel).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".mp3", ".wav", ".m4a", ".aiff", ".mp4", ".mov", ".m4v"].includes(ext)) {
+    return `![[${rel}]]`;
+  }
+  return `[${originalName || path.basename(rel)}](${rel})`;
+}
+
+function uniquePath(file) {
+  if (!fs.existsSync(file)) return file;
+  const parsed = path.parse(file);
+  let index = 2;
+  while (true) {
+    const candidate = path.join(parsed.dir, `${parsed.name}-${index}${parsed.ext}`);
+    if (!fs.existsSync(candidate)) return candidate;
+    index += 1;
+  }
 }
 
 function escapeRegExp(value) {

@@ -12,17 +12,19 @@ export function topicContent(config, input) {
   const linked = parseWikiLinks(topicText);
   const linkedSources = linked.filter((rel) => rel.startsWith("wiki/sources/"));
   const inferredSources = linkedSources.length ? [] : findSourcePagesMentioning(vaultPath, topicRel, topicTitle);
-  const sourceRels = unique([...(topicRel.startsWith("wiki/sources/") ? [topicRel] : []), ...linkedSources, ...inferredSources]);
-  const otherRels = unique([
-    ...(topicRel.startsWith("wiki/sources/") ? [] : [topicRel]),
-    ...linked.filter((rel) => !rel.startsWith("wiki/sources/") && rel !== topicRel)
-  ]);
-  const ordered = [...sourceRels, ...otherRels].slice(0, 10);
+  const ordered = topicRel.startsWith("wiki/sources/")
+    ? unique([topicRel, ...linked])
+    : unique([
+      ...linkedSources,
+      ...inferredSources,
+      topicRel,
+      ...linked.filter((rel) => !rel.startsWith("wiki/sources/") && rel !== topicRel)
+    ]);
 
   const lines = [
     `# ${topicTitle}`,
     "",
-    "Related source pages are shown first, followed by the topic page and other linked wiki pages.",
+    "The selected page is shown first when it is a source. Linked wiki pages follow in link order.",
     ""
   ];
 
@@ -32,7 +34,7 @@ export function topicContent(config, input) {
     lines.push(`## ${rel.startsWith("wiki/sources/") ? "Source" : "Related"}: ${titleFromMarkdown(text, rel)}`);
     lines.push(`${vaultName(vaultPath)} / ${rel}`);
     lines.push("");
-    lines.push(truncate(cleanForDisplay(text), 3500));
+    lines.push(cleanForDisplay(text));
     lines.push("");
   }
 
@@ -85,8 +87,7 @@ function findSourcePagesMentioning(vaultPath, topicRel, topicTitle) {
       const lower = readIfExists(file).toLowerCase();
       return needles.some((needle) => lower.includes(needle.toLowerCase()));
     })
-    .map((file) => path.relative(vaultPath, file).replace(/\\/g, "/"))
-    .slice(0, 4);
+    .map((file) => path.relative(vaultPath, file).replace(/\\/g, "/"));
 }
 
 function cleanForDisplay(markdown) {
@@ -106,10 +107,6 @@ function titleFromRel(rel) {
     .replace(/^\d{4}-\d{2}-\d{2}--/, "")
     .replace(/-/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function truncate(text, max) {
-  return text.length > max ? `${text.slice(0, max).trim()}\n\n[Content truncated in UI preview.]` : text;
 }
 
 function unique(items) {

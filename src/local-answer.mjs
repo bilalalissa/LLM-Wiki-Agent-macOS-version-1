@@ -27,9 +27,7 @@ export function answerLocally(question, config) {
     lines.push(`## ${match.title}`);
     lines.push(`${match.vault} / ${match.relativePath}`);
     lines.push("");
-    for (const snippet of match.snippets) {
-      lines.push(`- ${snippet}`);
-    }
+    lines.push(match.content || "No readable page content found.");
     lines.push("");
   }
 
@@ -43,15 +41,15 @@ function findMatches(terms, config) {
     for (const file of listWikiFiles(vaultPath)) {
       const relativePath = path.relative(vaultPath, file);
       if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
-      const text = stripUserNotes(fs.readFileSync(file, "utf8"));
-      const score = scoreText(`${relativePath}\n${text}`, terms);
+      const fullText = stripUserNotes(fs.readFileSync(file, "utf8"));
+      const score = scoreText(`${relativePath}\n${fullText}`, terms);
       if (score <= 0) continue;
       matches.push({
         vault: vaultName(vaultPath),
         relativePath,
-        title: extractTitle(text, relativePath),
+        title: extractTitle(fullText, relativePath),
         score,
-        snippets: extractSnippets(text, terms)
+        content: localPageContent(fullText)
       });
     }
   }
@@ -68,30 +66,10 @@ function scoreText(text, terms) {
   return score;
 }
 
-function extractSnippets(markdown, terms) {
-  const sections = markdown
+function localPageContent(markdown) {
+  return stripUserNotes(String(markdown || ""))
     .replace(/^---[\s\S]*?---\s*/m, "")
-    .split(/\n(?=##?\s+)/)
-    .map((section) => clean(section))
-    .filter(Boolean);
-
-  const ranked = sections
-    .map((section) => ({ section, score: scoreText(section, terms) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((item) => firstUsefulSentence(item.section));
-
-  if (ranked.length) return ranked;
-
-  const summary = sections.find((section) => /^summary\b/i.test(section.replace(/^#+\s*/, "")));
-  return [firstUsefulSentence(summary || clean(markdown))].filter(Boolean);
-}
-
-function firstUsefulSentence(text) {
-  const cleaned = clean(text).replace(/^#+\s*/, "");
-  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter((item) => item.length > 20);
-  return (sentences[0] || cleaned).slice(0, 420);
+    .trim();
 }
 
 function extractTitle(markdown, relativePath) {

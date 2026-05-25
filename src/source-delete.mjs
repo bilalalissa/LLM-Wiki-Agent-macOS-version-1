@@ -13,7 +13,7 @@ export function deleteSources(config, sources) {
 function archiveOneSource(config, source) {
   const vaultPath = resolveVault(config, source.vault);
   const rawRel = normalizeRel(source.file);
-  const sourceRel = normalizeRel(source.sourcePage);
+  const sourceRel = normalizeRel(source.sourcePage) || findSourcePageForRaw(vaultPath, rawRel);
   if (!rawRel && !sourceRel) throw new Error("Missing source file or source page.");
 
   const sourceNoExt = sourceRel ? sourceRel.replace(/\.md$/, "") : "";
@@ -33,8 +33,24 @@ function archiveOneSource(config, source) {
     raw: rawRel,
     sourcePage: sourceRel,
     archived,
-    updated
+    updated,
+    status: archived.length ? "archived" : "nothing found to archive"
   };
+}
+
+function findSourcePageForRaw(vaultPath, rawRel) {
+  if (!rawRel) return "";
+  const sourceDir = path.join(vaultPath, "wiki", "sources");
+  const files = [];
+  walk(sourceDir, files);
+  const normalizedRaw = rawRel.replace(/\\/g, "/");
+  for (const file of files.filter((item) => item.endsWith(".md"))) {
+    const text = readIfExists(file);
+    const match = text.match(/^source_path:\s*(.+)$/m);
+    const sourcePath = match?.[1]?.trim().replace(/^["']|["']$/g, "").replace(/\\/g, "/");
+    if (sourcePath === normalizedRaw) return path.relative(vaultPath, file).replace(/\\/g, "/");
+  }
+  return "";
 }
 
 function cleanupRelatedWikiPages(vaultPath, sourceNoExt, updated, archived) {
@@ -145,6 +161,7 @@ function archiveIfExists(vaultPath, fromRel, toRel, archived) {
 
 function archiveRawRel(rawRel) {
   const base = path.basename(rawRel);
+  if (rawRel.startsWith("raw/assets/")) return `raw/assets/archive/${base}`;
   return `raw/processed/archive/${base}`;
 }
 

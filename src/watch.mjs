@@ -12,7 +12,7 @@ console.log(`Watching vault raw folders every ${config.watchIntervalMs}ms.`);
 async function tick() {
   for (const vault of listVaults(config.vaultsRoot)) {
     try {
-      bootstrapVault(vault);
+      bootstrapVault(vault, config);
       const results = await ingestVault(vault, config, provider);
       for (const result of results) {
         console.log(`[${result.vault}] ingested ${result.source}`);

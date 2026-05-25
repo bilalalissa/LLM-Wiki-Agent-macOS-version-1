@@ -31,6 +31,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - [Vault Setup](#vault-setup)
 - [Automatic Vault Bootstrap](#automatic-vault-bootstrap)
 - [AI Provider Setup](#ai-provider-setup)
+- [Shared Agent State And iPhone/iPad Bridge](#shared-agent-state-and-iphoneipad-bridge)
 - [How To Use The App](#how-to-use-the-app)
 - [Native macOS Features](#native-macos-features)
 - [Local `.env` And `.gitignore`](#local-env-and-gitignore)
@@ -41,13 +42,22 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 
 - Watches configured Obsidian vault raw folders.
 - Automatically creates required LLM Wiki files in detected vaults.
-- Ingests markdown/text sources into `wiki/` pages.
+- Ingests markdown/text sources into `wiki/` pages and preserves media sources as local vault assets.
+- Adds learning-analysis sections to processed pages so source knowledge turns into practice questions and broader follow-up questions.
 - Maintains `index.md` and `log.md`.
 - Provides Chat, Local Search, Files, Archive, Topics, Provider, and Notes tabs.
+- Provides a right-side topic explorer that filters by title, tag, wiki element, and updated date.
 - Lets useful chat answers be saved back as raw sources.
-- Supports source archive/restore and permanent archive deletion.
+- Supports source rename, merge, archive/restore, and permanent archive deletion.
 - Stores user notes inside related markdown files and shows note indicators in results.
+- Supports note links, file attachments, pasted clipboard images, note hover previews, and rendered note media.
+- Supports Local result display modes: tree plus accordion, accordion, and plain markdown.
+- Keeps tab navigation and key tab controls sticky while scrolling.
+- Provides a Snap focus overlay for magnified reading of selected result text.
+- Includes multiple UI themes, including Light, Dark, Sepia, Forest, Contrast, and Megatron.
 - Runs as a native macOS app with a menu bar icon and a local webview UI.
+- Shares non-secret vault settings through `.llm-wiki/settings.json` so macOS, iPad, iPhone, and future agents display the same agent state.
+- Exposes optional Mac Bridge endpoints for iPhone/iPad clients using subscription-backed Codex CLI AI.
 
 [Back to top](#top)
 
@@ -66,7 +76,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 
 ```bash
 git clone https://github.com/bilalalissa/LLM-Wiki-Agent-macOS-version-1.git
-cd llm-wiki-agent
+cd LLM-Wiki-Agent-macOS-version-1
 ./scripts/build_macos_app.sh
 ./scripts/install_macos_app.sh
 open "/Applications/LLM Wiki Agent.app"
@@ -83,6 +93,8 @@ Edit that file from the app menu:
 ```text
 menu bar icon -> Open Config
 ```
+
+`Open Config` opens the app config in TextEdit directly, so macOS does not ask you to choose an application for `config.env`.
 
 [Back to top](#top)
 
@@ -136,6 +148,7 @@ raw/inbox/
 raw/input/
 raw/processed/
 raw/assets/
+raw/assets/archive/
 wiki/sources/
 wiki/entities/
 wiki/concepts/
@@ -183,9 +196,52 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 
 [Back to top](#top)
 
+## Shared Agent State And iPhone/iPad Bridge
+
+Every bootstrapped vault includes:
+
+```text
+.llm-wiki/settings.json
+```
+
+This manifest is shared by all agents and stores only non-secret settings: provider mode, transport label, default model, ingest/search preferences, display preferences, enabled wiki sections, and last-known agent metadata. API keys, OAuth tokens, Codex login state, bridge tokens, and local absolute paths stay in local app config or Keychain.
+
+The macOS app also acts as the Mac Bridge for iPhone/iPad clients. By default it listens only on this Mac:
+
+```text
+MAC_BRIDGE_HOST=127.0.0.1
+CHAT_PORT=8789
+MAC_BRIDGE_TOKEN=
+```
+
+To let an iPhone or iPad on the same local network connect, set:
+
+```text
+MAC_BRIDGE_HOST=0.0.0.0
+MAC_BRIDGE_TOKEN=choose-a-long-random-token
+```
+
+Then use this URL in the iPhone/iPad app's shared settings:
+
+```text
+http://<your-mac-local-ip>:8789
+```
+
+Store the same bridge token in the iPhone/iPad app's Settings screen. The token is kept in iOS Keychain and is not written into `.llm-wiki/settings.json`.
+
+Bridge endpoints:
+
+- `GET /api/vaults`
+- `GET /api/shared-settings`
+- `POST /api/shared-settings`
+- `GET /api/provider-status`
+- `POST /api/complete`
+
+[Back to top](#top)
+
 ## How To Use The App
 
-1. Put markdown or text sources into a vault's `raw/inbox/` folder.
+1. Put markdown, text, image, PDF, audio, or video sources into a vault's `raw/inbox/` folder.
 2. Keep the app running. It auto-detects and ingests sources.
 3. Browse generated pages in Obsidian under `wiki/`.
 4. Use Chat for AI-assisted questions.
@@ -196,6 +252,91 @@ Direct OpenAI and Anthropic APIs require API credentials and separate API billin
 9. Use Provider to inspect safe provider status without exposing secrets.
 
 Useful chat answers can be saved back into `raw/input/` and ingested like any other source.
+
+Local result display options:
+
+- `Tree + accordion` groups results by vault and wiki element, then lets each result expand or collapse.
+- `Accordion` shows a flatter list of expandable results.
+- `Plain` shows the original rendered markdown answer.
+- `Start` controls whether results begin collapsed, expanded, or with only the first result expanded.
+- Rendered answers use automatic text direction for mixed Arabic/English content. Each Local accordion result also has `Auto`, `RTL`, and `LTR` controls for manual direction alignment.
+
+The Local display preference is saved on the device.
+
+Main app layout:
+
+- Tab titles stay fixed at the top while scrolling.
+- Local, Files, Archive, and Notes controls are grouped into a single sticky controls bar.
+- Controls are compact so result content has more reading space.
+
+Focused reading:
+
+- The tab row stays fixed while scrolling.
+- Active tab controls stay near the top in compact form.
+- Select result text and click `Snap` to dim the screen and show the selected text in a magnified focus box.
+- Use the Snap size slider to control magnification. The size preference is saved on the device.
+- In the macOS app, Snap uses a native overlay; in browser fallback mode, it dims the app page.
+
+Adding notes from Chat or Local results:
+
+- Select text in a result box and click `Add note`.
+- Paste plain text or markdown directly into the note box.
+- Use `Add link` to insert a markdown link.
+- Use `Add media` to attach an image, PDF, audio file, or video file. The app saves the file under `raw/assets/user-notes/` in the related vault and inserts an Obsidian embed/link into the note.
+- Paste a copied image directly into the note box with `Cmd+V`; the app saves it as note media and inserts the Obsidian embed.
+- Saved notes are written into the related markdown file under `## User Notes`, so they remain visible in Obsidian and in the app.
+- Hover note indicators to preview note text and attached media; click an indicator to jump to the note card in the Notes tab.
+
+Processed source language:
+
+- The agent detects each source's primary language.
+- Generated source-page content is written in that source language where possible.
+- Stable schema headings stay consistent so the app can parse sections reliably.
+
+The Files tab can rename processed sources:
+
+- Select exactly one source.
+- Click `Rename selected source`.
+- Enter the new title.
+- The app renames the raw source file and source page when present, updates `source_path`, updates wiki links/references, refreshes the index mapping, and appends a maintenance log entry.
+
+Files, Archive, and Topics tables support local filtering and sorting:
+
+- Use the search box to filter visible rows.
+- Use dropdowns to filter by vault, status, type, or archive kind where available.
+- Click sortable column headers to toggle ascending or descending order.
+
+The Files tab can merge processed sources:
+
+- Select two or more sources from the same vault.
+- Click `Merge selected sources`.
+- Enter a title for the merged source.
+- Choose whether to keep originals active or archive them after the merge.
+
+The merged source is written to `raw/input/` as a new markdown file, so auto-ingest processes it like any other source. If originals are archived, the app uses the normal archive workflow: raw/source pages are moved to archive folders and active wiki/index references are cleaned up.
+
+Media ingest works as follows:
+
+- Images, PDFs, audio, and video dropped into `raw/` or `raw/inbox/` are moved to `raw/assets/`.
+- The app creates a traceable source page in `wiki/sources/`.
+- Image source pages include an Obsidian embed plus a local asset link.
+- Media facts are not invented. Add a description or ask the agent to inspect media before relying on observations.
+
+Processed wiki pages include structural analysis sections:
+
+- `Open Questions` for unresolved source or maintenance questions with current answers or explicit unresolved status.
+- `Contradictions` for conflicts, tension, or explicit "None yet" status.
+- `Source's Related Learning Questions` for source-grounded practice and retention questions with answers.
+- `Open Learning Questions` for broader connections, transfer, and global-awareness follow-up with answers.
+
+On source pages, the two learning-question sections are placed immediately after `Key Points`. Each item is stored as `Q:` with an indented `A:` answer so the wiki captures both the question and the current source-grounded answer.
+
+The right-side Topics & Insights panel supports:
+
+- free-text search over title, summary, tags, dates, vault, path, and wiki element
+- wiki element filtering, such as source, concept, area, question, or synthesis
+- tag filtering
+- updated-date range filtering
 
 [Back to top](#top)
 
@@ -210,7 +351,11 @@ The native macOS wrapper provides:
 - `Open Vaults Folder`.
 - `Start at Login` toggle.
 - `Show Dock Icon` toggle.
+- `Close Button Keeps Running` toggle.
+- `Hide Setup Required on Startup` toggle.
 - Startup setup checks.
+
+`Close Button Keeps Running` is enabled by default. With it on, clicking the window close button hides the window and keeps the menu bar app and auto-ingest running in the background. Turn it off if you want the close button to quit the app. `Hide Setup Required on Startup` suppresses the native startup setup prompt; setup status remains available in the app. `Start at Login` may require macOS approval in System Settings.
 
 [Back to top](#top)
 

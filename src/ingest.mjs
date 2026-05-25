@@ -15,7 +15,7 @@ if (!vaults.length) {
 
 let total = 0;
 for (const vault of vaults) {
-  bootstrapVault(vault);
+  bootstrapVault(vault, config);
   const results = await ingestVault(vault, config, provider);
   total += results.length;
   for (const result of results) {
