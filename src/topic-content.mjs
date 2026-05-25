@@ -12,17 +12,19 @@ export function topicContent(config, input) {
   const linked = parseWikiLinks(topicText);
   const linkedSources = linked.filter((rel) => rel.startsWith("wiki/sources/"));
   const inferredSources = linkedSources.length ? [] : findSourcePagesMentioning(vaultPath, topicRel, topicTitle);
-  const sourceRels = unique([...(topicRel.startsWith("wiki/sources/") ? [topicRel] : []), ...linkedSources, ...inferredSources]);
-  const otherRels = unique([
-    ...(topicRel.startsWith("wiki/sources/") ? [] : [topicRel]),
-    ...linked.filter((rel) => !rel.startsWith("wiki/sources/") && rel !== topicRel)
-  ]);
-  const ordered = [...sourceRels, ...otherRels];
+  const ordered = topicRel.startsWith("wiki/sources/")
+    ? unique([topicRel, ...linked])
+    : unique([
+      ...linkedSources,
+      ...inferredSources,
+      topicRel,
+      ...linked.filter((rel) => !rel.startsWith("wiki/sources/") && rel !== topicRel)
+    ]);
 
   const lines = [
     `# ${topicTitle}`,
     "",
-    "Related source pages are shown first, followed by the topic page and other linked wiki pages.",
+    "The selected page is shown first when it is a source. Linked wiki pages follow in link order.",
     ""
   ];
 

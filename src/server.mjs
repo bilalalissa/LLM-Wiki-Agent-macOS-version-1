@@ -625,6 +625,9 @@ function renderHtml() {
     details.local-result { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
     details.local-result > summary { cursor: pointer; padding: 10px 12px; font-weight: 700; }
     .local-result-body { background: var(--panel); border-top: 1px solid var(--line); padding: 12px; overflow: visible; }
+    details.local-nested { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
+    details.local-nested > summary { cursor: pointer; padding: 8px 10px; font-weight: 700; background: var(--soft); }
+    .local-nested-body { padding: 10px 12px; border-top: 1px solid var(--line); }
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .local-result-title { min-width: 0; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
@@ -1986,8 +1989,39 @@ function renderHtml() {
         '<summary><span class="local-result-heading"><span class="local-result-title" dir="auto">' + escapeHtml(result.title) + '</span>' + renderDirectionControls() + '</span></summary>' +
         '<div class="local-result-body" dir="auto">' +
         (result.ref ? '<p class="source-ref" dir="ltr">' + inlineMarkdown(result.ref) + '</p>' : '') +
-        (body ? renderMarkdown(body) : '<p class="muted">No readable page content found.</p>') +
+        (body ? renderNestedPageContent(body) : '<p class="muted">No readable page content found.</p>') +
         '</div></details>';
+    }
+
+    function renderNestedPageContent(markdown) {
+      const lines = String(markdown || "").split(/\\r?\\n/);
+      const intro = [];
+      const sections = [];
+      let current = null;
+      for (const line of lines) {
+        const heading = line.match(/^##\\s+(.+)$/);
+        if (heading) {
+          if (current) sections.push(current);
+          current = { title: heading[1].trim(), lines: [] };
+        } else if (current) {
+          current.lines.push(line);
+        } else {
+          intro.push(line);
+        }
+      }
+      if (current) sections.push(current);
+      if (!sections.length) return renderMarkdown(markdown);
+      const introHtml = intro.join("\\n").trim() ? renderMarkdown(intro.join("\\n")) : "";
+      const sectionsHtml = sections.map((section, index) => {
+        const open = index === 0 ? " open" : "";
+        const body = section.lines.join("\\n").trim();
+        return '<details class="local-nested"' + open + '>' +
+          '<summary>' + inlineMarkdown(section.title) + '</summary>' +
+          '<div class="local-nested-body">' +
+          (body ? renderMarkdown(body) : '<p class="muted">No content in this section.</p>') +
+          '</div></details>';
+      }).join("");
+      return introHtml + sectionsHtml;
     }
 
     function renderDirectionControls() {
