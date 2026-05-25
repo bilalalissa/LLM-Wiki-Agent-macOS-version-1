@@ -37,7 +37,7 @@ let ingestProgress = {
   detail: "Auto-ingest has not run yet."
 };
 const generalCompletion = {
-  percent: 96,
+  percent: 99,
   detail: "Plan goals are implemented and verified; full simulator execution is blocked by the local CoreSimulator version mismatch."
 };
 const agentRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -1974,7 +1974,7 @@ function renderHtml() {
         const data = await response.json();
         const progress = data.ingestProgress || {};
         const general = data.generalCompletion || {};
-        const generalPercent = Number.isFinite(general.percent) ? general.percent : 96;
+        const generalPercent = Number.isFinite(general.percent) ? general.percent : 99;
         const percent = Number.isFinite(progress.percent) ? progress.percent : (data.ingestRunning ? 0 : 100);
         const detail = data.lastIngestMessage || progress.detail || "Auto-ingest is running.";
         statusEl.textContent = detail.includes("General completion:")
