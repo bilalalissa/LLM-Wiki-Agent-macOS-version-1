@@ -631,13 +631,11 @@ function renderHtml() {
     .local-result-count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 6px; }
     mark.agent-highlight { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 2px; }
     .note-anchor { color: inherit; }
-    .note-indicator { display: inline-block; margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; padding: 0 5px; font-size: 11px; color: var(--accent); background: var(--soft); vertical-align: super; cursor: default; }
-    .note-indicator { position: relative; }
-    body[data-note-display="tooltip"] .note-indicator { text-decoration: underline dotted; }
-    body[data-note-display="box"] .note-indicator { cursor: help; }
-    .note-popover { display: none; position: absolute; left: 0; top: 130%; z-index: 30; min-width: 240px; max-width: min(360px, calc(100vw - 48px)); max-height: 420px; overflow: auto; white-space: normal; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; font-size: 13px; line-height: 1.35; }
-    body[data-note-display="box"] .note-indicator:hover .note-popover,
-    body[data-note-display="tooltip"] .note-indicator.has-media:hover .note-popover { display: block; }
+    .note-indicator { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); background: var(--soft); vertical-align: super; cursor: help; user-select: none; -webkit-user-select: none; }
+    .note-indicator::before { content: ""; display: block; width: 5px; height: 5px; border-radius: 999px; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 16%, transparent); }
+    .note-indicator.has-media::before { width: 6px; height: 6px; border-radius: 2px; }
+    .note-popover { display: none; position: fixed; z-index: 2000; min-width: 240px; max-width: min(420px, calc(100vw - 48px)); max-height: min(480px, calc(100vh - 48px)); overflow: auto; white-space: normal; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 18px 44px var(--shadow); padding: 10px; font-size: 13px; line-height: 1.35; }
+    .note-popover.visible { display: block; }
     .note-popover p { margin: 0 0 8px; }
     .note-popover p:last-child { margin-bottom: 0; }
     .note-popover img, .note-popover video, .note-popover iframe { display: block; max-width: 100%; max-height: 240px; border-radius: 4px; border: 1px solid var(--line); background: var(--soft); margin: 8px 0; }
@@ -945,6 +943,7 @@ function renderHtml() {
       <button id="note-save" class="primary" type="button">Save</button>
     </div>
   </div>
+  <div id="note-popover" class="note-popover" role="note"></div>
   <div id="snap-overlay" class="snap-overlay">
     <div class="snap-box">
       <div class="snap-controls">
@@ -1022,6 +1021,7 @@ function renderHtml() {
     const themeSelect = document.querySelector("#theme-select");
     const selectionToolbar = document.querySelector("#selection-toolbar");
     const noteEditor = document.querySelector("#note-editor");
+    const notePopover = document.querySelector("#note-popover");
     const noteText = document.querySelector("#note-text");
     const noteLinkText = document.querySelector("#note-link-text");
     const noteLinkUrl = document.querySelector("#note-link-url");
@@ -1039,6 +1039,7 @@ function renderHtml() {
     let lastLocalMarkdown = "";
     let selectedInfo = null;
     let notesCache = [];
+    let notePopoverTimer = null;
     let sideTopicsCache = [];
     let filesCache = [];
     let archivesCache = [];
@@ -1063,6 +1064,7 @@ function renderHtml() {
     noteDisplayMode.addEventListener("change", () => {
       document.body.dataset.noteDisplay = noteDisplayMode.value;
       localStorage.setItem("llm-wiki-note-display", noteDisplayMode.value);
+      hideNotePopover();
       refreshResultAnnotations();
     });
 
@@ -2059,7 +2061,8 @@ function renderHtml() {
     });
 
     document.addEventListener("mousedown", (event) => {
-      if (event.target.closest("#selection-toolbar") || event.target.closest("#note-editor")) return;
+      if (event.target.closest("#selection-toolbar") || event.target.closest("#note-editor") || event.target.closest("#note-popover")) return;
+      hideNotePopover();
       hideSelectionTools();
     });
 
@@ -2140,8 +2143,8 @@ function renderHtml() {
     }
 
     function selectionInfo(selection, box) {
-      const text = selection.toString().trim();
       const html = selectionHtml(selection);
+      const text = selectionText(selection);
       const markdown = htmlToMarkdown(html) || text;
       let vault = chatSaveVault.value || "";
       let path = "wiki/questions/agent-ui-notes.md";
@@ -2434,18 +2437,67 @@ function renderHtml() {
       indicator.className = "note-indicator";
       if (noteHasMedia(note.note)) indicator.classList.add("has-media");
       indicator.dataset.noteId = note.id;
+      indicator.setAttribute("role", "button");
+      indicator.setAttribute("aria-label", "User note");
+      indicator.tabIndex = 0;
       if (document.body.dataset.noteDisplay === "tooltip" && !noteHasMedia(note.note)) indicator.title = note.note;
-      indicator.textContent = "note";
-      const popover = document.createElement("span");
-      popover.className = "note-popover";
-      popover.innerHTML = renderNotePopover(note);
-      popover.addEventListener("click", (event) => event.stopPropagation());
-      indicator.appendChild(popover);
+      indicator.addEventListener("mouseenter", () => maybeShowNotePopover(note, indicator));
+      indicator.addEventListener("mouseleave", scheduleHideNotePopover);
+      indicator.addEventListener("focus", () => maybeShowNotePopover(note, indicator));
+      indicator.addEventListener("blur", scheduleHideNotePopover);
+      indicator.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        showNoteCard(note.id);
+      });
       indicator.addEventListener("click", (event) => {
         event.stopPropagation();
         showNoteCard(note.id);
       });
       anchor.after(indicator);
+    }
+
+    notePopover.addEventListener("mouseenter", () => {
+      if (notePopoverTimer) clearTimeout(notePopoverTimer);
+    });
+    notePopover.addEventListener("mouseleave", scheduleHideNotePopover);
+    notePopover.addEventListener("click", (event) => event.stopPropagation());
+
+    function maybeShowNotePopover(note, indicator) {
+      const useBrowserTooltip = document.body.dataset.noteDisplay === "tooltip" && !noteHasMedia(note.note);
+      if (useBrowserTooltip) return;
+      showNotePopover(note, indicator);
+    }
+
+    function showNotePopover(note, indicator) {
+      if (notePopoverTimer) clearTimeout(notePopoverTimer);
+      notePopover.innerHTML = renderNotePopover(note);
+      notePopover.classList.add("visible");
+      notePopover.style.left = "0px";
+      notePopover.style.top = "0px";
+      const indicatorRect = indicator.getBoundingClientRect();
+      const popoverRect = notePopover.getBoundingClientRect();
+      const margin = 12;
+      let left = indicatorRect.left;
+      let top = indicatorRect.bottom + 8;
+      if (left + popoverRect.width > window.innerWidth - margin) {
+        left = window.innerWidth - popoverRect.width - margin;
+      }
+      if (top + popoverRect.height > window.innerHeight - margin) {
+        top = indicatorRect.top - popoverRect.height - 8;
+      }
+      notePopover.style.left = Math.max(margin, left) + "px";
+      notePopover.style.top = Math.max(margin, top) + "px";
+    }
+
+    function scheduleHideNotePopover() {
+      if (notePopoverTimer) clearTimeout(notePopoverTimer);
+      notePopoverTimer = setTimeout(hideNotePopover, 160);
+    }
+
+    function hideNotePopover() {
+      notePopover.classList.remove("visible");
+      notePopover.innerHTML = "";
     }
 
     function noteHasMedia(note) {
@@ -2571,12 +2623,27 @@ function renderHtml() {
       setTimeout(() => { element.textContent = ""; }, 1400);
     }
 
-    function selectionHtml(selection) {
+    function selectionClone(selection) {
       const div = document.createElement("div");
       for (let i = 0; i < selection.rangeCount; i++) {
         div.appendChild(selection.getRangeAt(i).cloneContents());
       }
+      stripSelectionArtifacts(div);
+      return div;
+    }
+
+    function stripSelectionArtifacts(container) {
+      container.querySelectorAll(".note-indicator,.note-popover").forEach((node) => node.remove());
+    }
+
+    function selectionHtml(selection) {
+      const div = selectionClone(selection);
       return div.innerHTML;
+    }
+
+    function selectionText(selection) {
+      const div = selectionClone(selection);
+      return div.textContent.replace(/\s+/g, " ").trim();
     }
 
     function htmlToMarkdown(html) {
