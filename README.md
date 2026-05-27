@@ -133,6 +133,8 @@ Course-notes-vault/
 
 The app can detect normal Obsidian vaults through Obsidian's local vault registry, through their `.obsidian/` folder under `VAULTS_ROOT`, and through folders ending in `-vault`. If you add a new iCloud vault to Obsidian, the agent picks it up from Obsidian's registry on the next refresh/startup cycle.
 
+The Chat tab's `Save to` vault list refreshes from the same detected vault list, so newly added Obsidian vaults become available without restarting the app window.
+
 [Back to top](#top)
 
 ## Automatic Vault Bootstrap

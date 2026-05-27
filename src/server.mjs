@@ -1388,6 +1388,27 @@ function renderHtml() {
       }
     }
 
+    async function loadChatVaults() {
+      const current = chatSaveVault.value;
+      try {
+        const response = await fetch("/api/vaults");
+        const data = await response.json();
+        const names = (data.vaults || []).map((item) => item.name).filter(Boolean);
+        const uniqueNames = [...new Set(names)].sort((a, b) => String(a).localeCompare(String(b)));
+        chatSaveVault.innerHTML = uniqueNames
+          .map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>')
+          .join("");
+        if (uniqueNames.includes(current)) {
+          chatSaveVault.value = current;
+        } else if (uniqueNames.length) {
+          chatSaveVault.value = uniqueNames[0];
+        }
+        saveChatSource.disabled = uniqueNames.length === 0;
+      } catch {
+        saveChatSource.disabled = chatSaveVault.options.length === 0;
+      }
+    }
+
     function selectCitedVault(markdown) {
       const match = String(markdown).match(/\\b([A-Za-z0-9_-]+-vault)\\s+\\/\\s+wiki\\//);
       if (!match) return;
@@ -2951,10 +2972,12 @@ function renderHtml() {
     }
 
     loadSideTopics();
+    loadChatVaults();
     loadStatus();
     loadProviderStatus();
     loadNotes();
     setInterval(loadSideTopics, 10000);
+    setInterval(loadChatVaults, 10000);
     setInterval(loadStatus, 5000);
   </script>
 </body>
