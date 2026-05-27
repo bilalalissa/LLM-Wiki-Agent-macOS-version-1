@@ -903,8 +903,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             problems.append("Install Obsidian Web Clipper from https://obsidian.md/clipper.")
         }
         let vaultRoot = expandTilde(readConfigValue("VAULTS_ROOT") ?? "")
-        if vaultRoot.isEmpty || !hasConfiguredVault(in: vaultRoot) {
-            problems.append("Set VAULTS_ROOT in config.env to a folder containing at least one Obsidian vault. The app creates AGENTS.md, CLAUDE.md, index.md, log.md, raw/, and wiki/ automatically.")
+        if (vaultRoot.isEmpty || !hasConfiguredVault(in: vaultRoot)) && !hasAnyRegisteredObsidianVault() {
+            problems.append("Open or add at least one vault in Obsidian, or set VAULTS_ROOT in config.env to a folder containing Obsidian vaults. The app creates AGENTS.md, CLAUDE.md, index.md, log.md, raw/, and wiki/ automatically.")
         }
         if !providerConfigured() {
             problems.append("Configure at least one AI provider in config.env. For ChatGPT subscription mode, install Codex CLI and run `codex login`.")
@@ -931,8 +931,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func hasConfiguredVault(in root: String) -> Bool {
         guard let items = try? FileManager.default.contentsOfDirectory(atPath: root) else { return false }
         return items.contains { name in
-            name.hasSuffix("-vault") && FileManager.default.fileExists(atPath: "\(root)/\(name)/AGENTS.md")
+            let path = "\(root)/\(name)"
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { return false }
+            return name.hasSuffix("-vault") ||
+                FileManager.default.fileExists(atPath: "\(path)/.obsidian") ||
+                FileManager.default.fileExists(atPath: "\(path)/AGENTS.md") ||
+                FileManager.default.fileExists(atPath: "\(path)/CLAUDE.md")
         }
+    }
+
+    private func hasAnyRegisteredObsidianVault() -> Bool {
+        let registryPath = "\(NSHomeDirectory())/Library/Application Support/obsidian/obsidian.json"
+        guard
+            let data = FileManager.default.contents(atPath: registryPath),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let vaults = json["vaults"] as? [String: Any]
+        else {
+            return false
+        }
+        return vaults.values.contains { entry in
+            if let path = entry as? String {
+                return isExistingDirectory(expandTilde(path))
+            }
+            if let dict = entry as? [String: Any], let path = dict["path"] as? String {
+                return isExistingDirectory(expandTilde(path))
+            }
+            return false
+        }
+    }
+
+    private func isExistingDirectory(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
     }
 
     private func providerConfigured() -> Bool {

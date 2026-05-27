@@ -104,7 +104,7 @@ Every time the app starts, it checks:
 
 - Obsidian is installed.
 - Obsidian Web Clipper appears to be installed.
-- `VAULTS_ROOT` points to a folder with at least one Obsidian vault.
+- At least one Obsidian vault is available, either registered in Obsidian or under `VAULTS_ROOT`.
 - At least one AI provider is configured.
 
 If anything is missing, the app shows setup feedback with instructions.
@@ -113,7 +113,7 @@ If anything is missing, the app shows setup feedback with instructions.
 
 ## Vault Setup
 
-Set `VAULTS_ROOT` to the parent folder containing your Obsidian vaults.
+The app detects vaults registered in Obsidian automatically, including cloud vaults added later through Obsidian. `VAULTS_ROOT` is still useful as a fallback or when you keep several vaults under one dedicated folder.
 
 Example:
 
@@ -131,7 +131,7 @@ Personal-vault/
 Course-notes-vault/
 ```
 
-The app can detect normal Obsidian vaults through their `.obsidian/` folder, and it also detects folders ending in `-vault`.
+The app can detect normal Obsidian vaults through Obsidian's local vault registry, through their `.obsidian/` folder under `VAULTS_ROOT`, and through folders ending in `-vault`. If you add a new iCloud vault to Obsidian, the agent picks it up from Obsidian's registry on the next refresh/startup cycle.
 
 [Back to top](#top)
 

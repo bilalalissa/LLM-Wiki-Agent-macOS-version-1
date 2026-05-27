@@ -3119,7 +3119,7 @@ function readHelpMarkdown() {
     "",
     "The app help file could not be found in this installation.",
     "",
-    "Use the menu bar icon to open the config file, verify `VAULTS_ROOT`, and reinstall the app from the latest build."
+    "Use the menu bar icon to open the config file, verify vault setup, and reinstall the app from the latest build."
   ].join("\\n");
 }
 
