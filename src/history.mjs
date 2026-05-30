@@ -40,6 +40,7 @@ function recordsFromVault(vaultPath) {
   return files
     .filter((file) => isIngestibleRawFile(file))
     .filter((file) => !path.relative(vaultPath, file).replace(/\\/g, "/").includes("/archive/"))
+    .filter((file) => !isBrowserStreamPart(vaultPath, file))
     .map((file) => {
       const rel = path.relative(vaultPath, file);
       const stats = fs.statSync(file);
@@ -54,6 +55,15 @@ function recordsFromVault(vaultPath) {
         processedAtMs: sourceStats?.mtimeMs || stats.mtimeMs
       };
     });
+}
+
+function isBrowserStreamPart(vaultPath, file) {
+  const rel = path.relative(vaultPath, file).replace(/\\/g, "/").toLowerCase();
+  if (!rel.startsWith("raw/assets/browser-clips/")) return false;
+  if (rel.includes("--stream-package/")) return true;
+  const base = path.basename(rel);
+  return /--(init|seg-|seg_|chunk-|chunk_)/.test(base) ||
+    /\.(m4s|mpd|m3u8)$/.test(base);
 }
 
 function mapSourcePages(vaultPath) {

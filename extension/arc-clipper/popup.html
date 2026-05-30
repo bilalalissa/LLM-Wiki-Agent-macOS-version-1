@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Wiki Agent Clipper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1>LLM Wiki Clipper</h1>
+    <label>
+      Agent URL
+      <input id="server-url" type="url" value="http://127.0.0.1:8789">
+    </label>
+    <div class="row">
+      <label class="grow">
+        Vault
+        <select id="vaults"></select>
+      </label>
+      <button id="refresh" type="button" title="Refresh vaults">Refresh</button>
+    </div>
+    <div class="actions">
+      <button id="clip-selection" type="button">Prepare selection</button>
+      <button id="clip-page" type="button">Prepare page</button>
+      <button id="clip-media" type="button">Prepare page media</button>
+    </div>
+    <section id="progress-wrap" hidden>
+      <div class="progress-header">
+        <span id="progress-label">Preparing...</span>
+        <span id="progress-percent">0%</span>
+      </div>
+      <progress id="progress" value="0" max="100"></progress>
+    </section>
+    <section id="preview" hidden>
+      <h2>Review before submit</h2>
+      <dl>
+        <div><dt>Type</dt><dd id="preview-type"></dd></div>
+        <div><dt>Text</dt><dd id="preview-text"></dd></div>
+        <div><dt>Media</dt><dd id="preview-media-summary"></dd></div>
+      </dl>
+      <label>
+        Clip title
+        <input id="preview-title" type="text">
+      </label>
+      <ol id="media-list"></ol>
+      <button id="submit" type="button">Submit to vault</button>
+    </section>
+    <p id="status" role="status">Start LLM Wiki Agent, then choose a vault.</p>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

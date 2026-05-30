@@ -24,6 +24,7 @@ function makeConfig(root) {
 
 function makeVaultRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "llm-wiki-shared-settings-"));
+  process.env.OBSIDIAN_VAULTS_FILE = path.join(root, "empty-obsidian-registry.json");
   const vault = path.join(root, "Research-vault");
   fs.mkdirSync(vault, { recursive: true });
   return { root, vault };

@@ -32,6 +32,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - [Automatic Vault Bootstrap](#automatic-vault-bootstrap)
 - [AI Provider Setup](#ai-provider-setup)
 - [Shared Agent State And iPhone/iPad Bridge](#shared-agent-state-and-iphoneipad-bridge)
+- [Arc Browser Companion Extension](#arc-browser-companion-extension)
 - [How To Use The App](#how-to-use-the-app)
 - [Native macOS Features](#native-macos-features)
 - [Local `.env` And `.gitignore`](#local-env-and-gitignore)
@@ -58,6 +59,7 @@ This project implements the LLM Wiki pattern described by Andrej Karpathy: https
 - Runs as a native macOS app with a menu bar icon and a local webview UI.
 - Shares non-secret vault settings through `.llm-wiki/settings.json` so macOS, iPad, iPhone, and future agents display the same agent state.
 - Exposes optional Mac Bridge endpoints for iPhone/iPad clients using subscription-backed Codex CLI AI.
+- Includes an Arc/Chromium browser companion extension for clipping selected text, media, links, or whole pages into a selected vault.
 
 [Back to top](#top)
 
@@ -238,6 +240,59 @@ Bridge endpoints:
 - `POST /api/shared-settings`
 - `GET /api/provider-status`
 - `POST /api/complete`
+
+[Back to top](#top)
+
+## Arc Browser Companion Extension
+
+The project includes an unpacked Arc/Chromium extension:
+
+```text
+extension/arc-clipper/
+```
+
+It lets you export browser content into a selected Obsidian vault through the running local agent.
+
+Supported clip types:
+
+- selected browser text
+- current whole page text and captured HTML
+- page media references
+- downloaded page media when browser or server access permits it
+- right-clicked image, audio, video, media link, or normal link
+
+Install in Arc:
+
+1. Start `LLM Wiki Agent.app`.
+2. Open `arc://extensions`.
+3. Enable Developer Mode.
+4. Click `Load unpacked`.
+5. Select `extension/arc-clipper`.
+6. Click the extension icon, confirm the Agent URL, and choose a vault.
+
+Default Agent URL:
+
+```text
+http://127.0.0.1:8789
+```
+
+Clips are saved into the selected vault as new raw sources:
+
+```text
+raw/input/
+```
+
+When browser permissions allow media export, binary media is downloaded and saved into:
+
+```text
+raw/assets/browser-clips/
+```
+
+The extension watches visible media elements, resource timing entries, and browser media requests so images, PDFs, audio, video, and common streaming URLs are detected. It first tries to transfer the actual media bytes from the browser, including same-session media when allowed. If that fails, the local agent tries a server-side download for public URLs. If neither route can access the file, the generated markdown source keeps the original media URL for traceability. The app's normal auto-ingest then processes the new raw source and updates the wiki.
+
+The extension popup prepares clips before submission. It shows a progress bar, detected media details, how many media items were downloaded, and which items are URL-only. Click `Submit to vault` only after reviewing the prepared clip.
+
+For video pages, start `Prepare page media` while the video is playing and keep the popup open. The extension keeps collecting chunks until playback ends, a stream manifest exposes an end marker, or playback is inactive and no new chunks arrive for the idle window.
 
 [Back to top](#top)
 

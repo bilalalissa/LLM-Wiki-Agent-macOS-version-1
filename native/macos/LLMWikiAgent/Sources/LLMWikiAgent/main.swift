@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var setupAlertItem: NSMenuItem!
     private var snapWindows: [NSWindow] = []
     private var childWindows: [NSWindow] = []
+    private var navigationRetryCounts: [ObjectIdentifier: Int] = [:]
     private weak var snapBoxView: NSView?
     private weak var snapTextView: WKWebView?
     private let closeBehaviorKey = "closeButtonKeepsRunning"
@@ -56,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         webView.uiDelegate = self
         webView.loadHTMLString(statusHTML("Starting LLM Wiki Agent", "Starting the local wiki server..."), baseURL: nil)
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 1360, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -253,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         secondaryWebView.loadHTMLString(statusHTML("Opening LLM Wiki Agent", "Loading the local wiki server..."), baseURL: nil)
 
         let secondaryWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 820),
+            contentRect: NSRect(x: 0, y: 0, width: 1360, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -549,25 +550,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func loadAppWhenReady(in targetWebView: WKWebView, attempt: Int = 1) {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "dev"
-        guard let url = URL(string: "http://127.0.0.1:\(port)/?v=\(version)&window=\(UUID().uuidString)") else { return }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
-        request.timeoutInterval = 1.5
-        URLSession.shared.dataTask(with: request) { data, response, error in
+        guard let appURL = URL(string: "http://127.0.0.1:\(port)/?v=\(version)&window=\(UUID().uuidString)"),
+              let statusURL = URL(string: "http://127.0.0.1:\(port)/api/status") else { return }
+        var statusRequest = URLRequest(url: statusURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        statusRequest.timeoutInterval = 8
+        URLSession.shared.dataTask(with: statusRequest) { data, response, error in
             let ok = (response as? HTTPURLResponse)?.statusCode == 200 && !(data?.isEmpty ?? true)
             DispatchQueue.main.async {
                 if ok {
-                    targetWebView.load(request)
-                } else if attempt < 40 {
-                    targetWebView.loadHTMLString(self.statusHTML("Starting LLM Wiki Agent", "Waiting for the local server... attempt \(attempt)/40"), baseURL: nil)
+                    var appRequest = URLRequest(url: appURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+                    appRequest.timeoutInterval = 45
+                    self.navigationRetryCounts[ObjectIdentifier(targetWebView)] = 0
+                    targetWebView.load(appRequest)
+                } else if attempt < 90 {
+                    targetWebView.loadHTMLString(self.statusHTML("Starting LLM Wiki Agent", "Waiting for the local server... attempt \(attempt)/90"), baseURL: nil)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.loadAppWhenReady(in: targetWebView, attempt: attempt + 1)
                     }
                 } else {
                     let detail = error?.localizedDescription ?? "The local server did not return a page."
-                    targetWebView.loadHTMLString(self.statusHTML("Could not load the app", "\(detail)<br><br>Use the menu bar icon -> Open Config to check configuration, then quit and reopen the app."), baseURL: nil)
+                    targetWebView.loadHTMLString(self.statusHTML("Could not load the app", "\(detail)<br><br>Use the menu bar icon -> Open Config to check configuration, or click Retry."), baseURL: nil)
                 }
             }
         }.resume()
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        navigationRetryCounts[ObjectIdentifier(webView)] = 0
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -575,7 +584,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
             return
         }
-        webView.loadHTMLString(statusHTML("Could not load the app", error.localizedDescription), baseURL: nil)
+        let retryableCodes = [
+            NSURLErrorTimedOut,
+            NSURLErrorCannotConnectToHost,
+            NSURLErrorNetworkConnectionLost,
+            NSURLErrorNotConnectedToInternet
+        ]
+        let key = ObjectIdentifier(webView)
+        let retryCount = navigationRetryCounts[key] ?? 0
+        if nsError.domain == NSURLErrorDomain && retryableCodes.contains(nsError.code) && retryCount < 8 {
+            navigationRetryCounts[key] = retryCount + 1
+            webView.loadHTMLString(statusHTML("Reconnecting LLM Wiki Agent", "\(error.localizedDescription)<br><br>Retrying..."), baseURL: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.loadAppWhenReady(in: webView)
+            }
+            return
+        }
+        webView.loadHTMLString(statusHTML("Could not load the app", "\(error.localizedDescription)<br><br>Click Retry after checking the menu bar config."), baseURL: nil)
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -862,9 +887,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             main { max-width: 680px; margin: 80px auto; padding: 0 28px; line-height: 1.5; }
             h1 { font-size: 24px; margin: 0 0 12px; }
             p { margin: 0; color: #4b5563; }
+            button { margin-top: 22px; border: 0; border-radius: 8px; padding: 10px 16px; background: #111827; color: white; font: inherit; cursor: pointer; }
+            button:hover { background: #374151; }
           </style>
         </head>
-        <body><main><h1>\(title)</h1><p>\(message)</p></main></body>
+        <body><main><h1>\(title)</h1><p>\(message)</p><button onclick="location.href='http://127.0.0.1:\(port)/?retry=' + Date.now()">Retry</button></main></body>
         </html>
         """
     }
