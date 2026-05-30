@@ -53,7 +53,7 @@ function vaultsCheck(config) {
     name: "Vaults",
     ok: count > 0,
     level: count > 0 ? "ok" : "error",
-    detail: count > 0 ? `${count} vault(s) found. Missing LLM Wiki files are created automatically at startup.` : "Set VAULTS_ROOT to a folder containing at least one Obsidian vault. Keeping one dedicated LLM Wiki vault is a good starting practice."
+    detail: count > 0 ? `${count} vault(s) found. Missing LLM Wiki files are created automatically at startup.` : "Open or add at least one vault in Obsidian, or set VAULTS_ROOT to a folder containing vaults. Keeping one dedicated LLM Wiki vault is a good starting practice."
   };
 }
 

@@ -9,6 +9,7 @@ import { backfillLearningSections } from "./backfill-learning-sections.mjs";
 import { getConfig, setConfigFilePath } from "./config.mjs";
 import { answerQuestion } from "./chat-lib.mjs";
 import { saveChatAsRawSource } from "./chat-source.mjs";
+import { saveBrowserClip } from "./clip.mjs";
 import { listArchiveHistory, listFileHistory } from "./history.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
@@ -44,6 +45,12 @@ const agentRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
+
+  if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+    response.writeHead(204, corsHeaders());
+    response.end();
+    return;
+  }
 
   if (request.method === "GET" && url.pathname === "/") {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -202,8 +209,22 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "GET" && url.pathname === "/api/vaults") {
-    response.writeHead(200, { "content-type": "application/json" });
+    response.writeHead(200, corsHeaders({ "content-type": "application/json" }));
     response.end(JSON.stringify({ vaults: listBridgeVaults(config) }));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/clip") {
+    try {
+      const body = await readBody(request, 240 * 1024 * 1024);
+      const result = await saveBrowserClip(config, JSON.parse(body || "{}"));
+      runAutoIngest();
+      response.writeHead(200, corsHeaders({ "content-type": "application/json" }));
+      response.end(JSON.stringify(result));
+    } catch (error) {
+      response.writeHead(500, corsHeaders({ "content-type": "application/json" }));
+      response.end(JSON.stringify({ error: error.message }));
+    }
     return;
   }
 
@@ -277,6 +298,18 @@ const server = http.createServer(async (request, response) => {
       await openConfigFile(config.configFile);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ status: "Opened config file.", configFile: config.configFile }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/open-obsidian") {
+    try {
+      await openObsidian();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "Opened Obsidian." }));
     } catch (error) {
       response.writeHead(500, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: error.message }));
@@ -427,18 +460,20 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(config.chatPort, config.bridgeHost, () => {
   console.log(`LLM Wiki chat UI: http://${config.bridgeHost}:${config.chatPort}`);
-  startAutoIngest();
+  setTimeout(startAutoIngest, 1500);
 });
 
 function startAutoIngest() {
   for (const vault of listVaults(config.vaultsRoot)) {
     bootstrapVault(vault, config);
   }
-  const backfilled = backfillLearningSections(config);
-  if (backfilled.length) {
-    console.log(`[backfill] added learning sections to ${backfilled.length} wiki page${backfilled.length === 1 ? "" : "s"}`);
+  if (process.env.LLM_WIKI_BACKFILL_ON_START === "1") {
+    const backfilled = backfillLearningSections(config);
+    if (backfilled.length) {
+      console.log(`[backfill] added learning sections to ${backfilled.length} wiki page${backfilled.length === 1 ? "" : "s"}`);
+    }
   }
-  runAutoIngest();
+  void runAutoIngest();
   setInterval(runAutoIngest, config.watchIntervalMs);
 }
 
@@ -465,6 +500,12 @@ function chooseConfigFile() {
 function openConfigFile(file) {
   return new Promise((resolve, reject) => {
     execFile("open", ["-a", "TextEdit", file], (error) => error ? reject(error) : resolve(""));
+  });
+}
+
+function openObsidian() {
+  return new Promise((resolve, reject) => {
+    execFile("open", ["-a", "Obsidian"], (error) => error ? reject(error) : resolve(""));
   });
 }
 
@@ -656,15 +697,31 @@ function reportStatus(detail) {
   return `General completion: ${generalCompletion.percent}%. ${detail}`;
 }
 
-function readBody(request) {
+function readBody(request, maxBytes = 64 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let bytes = 0;
     request.on("data", (chunk) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        reject(new Error("Request body is too large."));
+        request.destroy();
+        return;
+      }
       body += chunk;
     });
     request.on("end", () => resolve(body));
     request.on("error", reject);
   });
+}
+
+function corsHeaders(extra = {}) {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-headers": "content-type, x-llm-wiki-bridge-token, authorization",
+    ...extra
+  };
 }
 
 function authorizedBridgeRequest(request, response) {
@@ -699,7 +756,7 @@ function renderHtml() {
     body[data-theme="contrast"] { --bg: #ffffff; --text: #000000; --panel: #ffffff; --line: #000000; --soft: #eeeeee; --muted: #333333; --accent: #000000; --accent-text: #ffffff; --shadow: rgba(0, 0, 0, 0.2); --mark: #ffff00; }
     body[data-theme="megatron"] { --bg: #0b0d12; --text: #e8eef7; --panel: #161a23; --line: #3b4354; --soft: #222838; --muted: #9aa8bd; --accent: #39d5ff; --accent-text: #061019; --shadow: rgba(0, 0, 0, 0.36); --mark: #705d17; }
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
-    main { max-width: 920px; margin: 0 auto; padding: 32px 300px 32px 20px; }
+    main { max-width: 980px; margin: 0 auto; padding: 32px 360px 32px 20px; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
     h1 { font-size: 24px; margin: 0; }
     .header-actions { display: flex; align-items: center; gap: 12px; }
@@ -783,7 +840,7 @@ function renderHtml() {
     tr:last-child td { border-bottom: 0; }
     .muted { color: var(--muted); }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
-    .side-topics { position: fixed; top: 20px; right: 20px; width: 250px; max-height: calc(100vh - 40px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); }
+    .side-topics { position: fixed; top: 20px; right: 20px; width: 320px; max-height: calc(100vh - 40px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); }
     .side-topic-controls { position: sticky; top: -14px; z-index: 5; background: var(--panel); padding: 14px 0 10px; margin-top: -14px; border-bottom: 1px solid var(--line); }
     .side-topics h2 { margin: 0 0 10px; font-size: 15px; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
@@ -829,7 +886,7 @@ function renderHtml() {
     .source-ref { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
     .config-path-row { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
     .config-path-row input { min-width: 0; }
-    @media (max-width: 1180px) {
+    @media (max-width: 1240px) {
       main { padding-right: 20px; }
       .side-topics { position: static; width: auto; max-height: 220px; margin: 0 20px 20px; }
     }
@@ -849,6 +906,7 @@ function renderHtml() {
           <option value="contrast">Contrast</option>
           <option value="megatron">Megatron</option>
         </select>
+        <button id="open-obsidian" class="secondary" type="button">Open Obsidian</button>
         <a class="help" href="/help">Help</a>
       </div>
     </header>
@@ -1156,6 +1214,7 @@ function renderHtml() {
     const sideTopicTo = document.querySelector("#side-topic-to");
     const statusEl = document.querySelector("#status");
     const themeSelect = document.querySelector("#theme-select");
+    const openObsidianButton = document.querySelector("#open-obsidian");
     const selectionToolbar = document.querySelector("#selection-toolbar");
     const noteEditor = document.querySelector("#note-editor");
     const notePopover = document.querySelector("#note-popover");
@@ -1194,6 +1253,7 @@ function renderHtml() {
       document.body.dataset.theme = themeSelect.value;
       localStorage.setItem("llm-wiki-theme", themeSelect.value);
     });
+    openObsidianButton.addEventListener("click", openObsidianApp);
 
     const savedNoteDisplay = localStorage.getItem("llm-wiki-note-display") || "box";
     document.body.dataset.noteDisplay = savedNoteDisplay;
@@ -1385,6 +1445,27 @@ function renderHtml() {
       } finally {
         saveChatSource.disabled = false;
         setTimeout(() => { saveChatFeedback.textContent = ""; }, 3600);
+      }
+    }
+
+    async function loadChatVaults() {
+      const current = chatSaveVault.value;
+      try {
+        const response = await fetch("/api/vaults");
+        const data = await response.json();
+        const names = (data.vaults || []).map((item) => item.name).filter(Boolean);
+        const uniqueNames = [...new Set(names)].sort((a, b) => String(a).localeCompare(String(b)));
+        chatSaveVault.innerHTML = uniqueNames
+          .map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>')
+          .join("");
+        if (uniqueNames.includes(current)) {
+          chatSaveVault.value = current;
+        } else if (uniqueNames.length) {
+          chatSaveVault.value = uniqueNames[0];
+        }
+        saveChatSource.disabled = uniqueNames.length === 0;
+      } catch {
+        saveChatSource.disabled = chatSaveVault.options.length === 0;
       }
     }
 
@@ -1810,6 +1891,29 @@ function renderHtml() {
       await updateConfigPath("/api/config-open");
     }
 
+    async function openObsidianApp() {
+      openObsidianButton.disabled = true;
+      const previous = statusEl.textContent;
+      statusEl.textContent = "Opening Obsidian...";
+      try {
+        const response = await fetch("/api/open-obsidian", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}"
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        statusEl.textContent = data.status || "Opened Obsidian.";
+      } catch (error) {
+        statusEl.textContent = "Could not open Obsidian: " + error.message;
+      } finally {
+        openObsidianButton.disabled = false;
+        setTimeout(() => {
+          if (statusEl.textContent === "Opened Obsidian.") statusEl.textContent = previous;
+        }, 2500);
+      }
+    }
+
     async function updateConfigPath(endpoint, body) {
       configPathFeedback.textContent = "Working...";
       try {
@@ -1867,18 +1971,59 @@ function renderHtml() {
           if (!query) return true;
           return [topic.title, topic.summary, topic.type, topic.vault, topic.updated, topic.created, topic.path, ...tags]
             .some((value) => String(value || "").toLowerCase().includes(query));
-        })
-        .slice(0, 120);
+        });
+      const groupedTopics = groupSideTopics(topics);
       if (!topics.length) {
         topicList.textContent = sideTopicsCache.length ? "No matching topics." : "No topics yet.";
         return;
       }
-      topicList.innerHTML = topics.map((topic) =>
-        '<button type="button" data-title="' + escapeHtml(topic.title) + '" data-vault="' + escapeHtml(topic.vault) + '" data-path="' + escapeHtml(topic.path) + '" title="' + escapeHtml(topic.summary || "") + '">' + escapeHtml(topic.title) + '<span class="side-topic-meta">' + escapeHtml(topic.type || "") + (topic.updated ? " | " + escapeHtml(topic.updated) : "") + '</span></button>'
+      topicList.innerHTML = groupedTopics.map((group) =>
+        '<button type="button" data-title="' + escapeHtml(group.topic.title) + '" data-vault="' + escapeHtml(group.topic.vault) + '" data-path="' + escapeHtml(group.topic.path) + '" title="' + escapeHtml(group.title) + '">' + escapeHtml(group.topic.title) + '<span class="side-topic-meta">' + escapeHtml(group.meta) + '</span></button>'
       ).join("");
       topicList.querySelectorAll("button").forEach((item) => {
         item.addEventListener("click", () => openSideTopic(item));
       });
+    }
+
+    function groupSideTopics(topics) {
+      const groups = new Map();
+      for (const topic of topics) {
+        const key = normalizeTopicTitle(topic.title);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(topic);
+      }
+      return Array.from(groups.values()).map((items) => {
+        const sorted = items.slice().sort(compareSideTopicPreference);
+        const topic = sorted[0];
+        const vaults = [...new Set(items.map((item) => item.vault).filter(Boolean))];
+        const types = [...new Set(items.map((item) => item.type).filter(Boolean))];
+        const updated = sorted.map((item) => item.updated).filter(Boolean).sort().at(-1) || "";
+        const duplicateText = items.length > 1 ? " | " + items.length + " matches" : "";
+        const vaultText = vaults.length > 1 ? " | " + vaults.length + " vaults" : vaults[0] ? " | " + vaults[0] : "";
+        return {
+          topic,
+          meta: (types[0] || "topic") + (updated ? " | " + updated : "") + duplicateText + vaultText,
+          title: items.map((item) => [item.vault, item.type, item.path].filter(Boolean).join(" | ")).join("\\n")
+        };
+      }).sort((a, b) => a.topic.title.localeCompare(b.topic.title));
+    }
+
+    function normalizeTopicTitle(title) {
+      return String(title || "").trim().toLowerCase().replace(/\\s+/g, " ");
+    }
+
+    function compareSideTopicPreference(a, b) {
+      return topicTypePriority(a.type) - topicTypePriority(b.type) ||
+        String(b.updated || "").localeCompare(String(a.updated || "")) ||
+        String(a.vault || "").localeCompare(String(b.vault || "")) ||
+        String(a.path || "").localeCompare(String(b.path || ""));
+    }
+
+    function topicTypePriority(type) {
+      const value = String(type || "").toLowerCase();
+      const order = ["source", "synthesis", "map", "area", "concept", "entity", "question", "info"];
+      const index = order.indexOf(value);
+      return index === -1 ? order.length : index;
     }
 
     function renderTopicTypeOptions() {
@@ -2951,10 +3096,12 @@ function renderHtml() {
     }
 
     loadSideTopics();
+    loadChatVaults();
     loadStatus();
     loadProviderStatus();
     loadNotes();
     setInterval(loadSideTopics, 10000);
+    setInterval(loadChatVaults, 10000);
     setInterval(loadStatus, 5000);
   </script>
 </body>
@@ -3119,7 +3266,7 @@ function readHelpMarkdown() {
     "",
     "The app help file could not be found in this installation.",
     "",
-    "Use the menu bar icon to open the config file, verify `VAULTS_ROOT`, and reinstall the app from the latest build."
+    "Use the menu bar icon to open the config file, verify vault setup, and reinstall the app from the latest build."
   ].join("\\n");
 }
 

@@ -26,6 +26,7 @@ copy_file "$ROOT/package.json" "$OUT/package.json"
 copy_file "$ROOT/config.example.env" "$OUT/config.example.env"
 copy_dir "$ROOT/src" "$OUT/src"
 copy_dir "$ROOT/docs" "$OUT/docs"
+copy_dir "$ROOT/extension/arc-clipper" "$OUT/extension/arc-clipper"
 if [ -d "$ROOT/media" ]; then
   copy_dir "$ROOT/media" "$OUT/media"
 fi

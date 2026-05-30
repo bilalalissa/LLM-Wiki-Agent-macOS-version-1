@@ -1,11 +1,32 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export function listVaults(root) {
-  return fs.readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && isVaultDirectory(path.join(root, entry.name), entry.name))
-    .map((entry) => path.join(root, entry.name))
-    .sort();
+  return uniquePaths([
+    ...listVaultsUnderRoot(root),
+    ...listObsidianVaults()
+  ]).sort((a, b) => vaultName(a).localeCompare(vaultName(b), undefined, { sensitivity: "base" }));
+}
+
+function listVaultsUnderRoot(root) {
+  const resolvedRoot = path.resolve(expandTilde(root || "."));
+  if (!isDirectory(resolvedRoot)) return [];
+  return fs.readdirSync(resolvedRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && isVaultDirectory(path.join(resolvedRoot, entry.name), entry.name))
+    .map((entry) => path.join(resolvedRoot, entry.name));
+}
+
+export function listObsidianVaults() {
+  const registryFile = process.env.OBSIDIAN_VAULTS_FILE ||
+    path.join(os.homedir(), "Library", "Application Support", "obsidian", "obsidian.json");
+  const registry = readJson(registryFile);
+  const vaults = registry?.vaults && typeof registry.vaults === "object" ? Object.values(registry.vaults) : [];
+  return vaults
+    .map((entry) => typeof entry === "string" ? entry : entry?.path)
+    .filter(Boolean)
+    .map((item) => path.resolve(expandTilde(item)))
+    .filter(isDirectory);
 }
 
 function isVaultDirectory(vaultPath, name) {
@@ -13,6 +34,46 @@ function isVaultDirectory(vaultPath, name) {
     fs.existsSync(path.join(vaultPath, ".obsidian")) ||
     fs.existsSync(path.join(vaultPath, "AGENTS.md")) ||
     fs.existsSync(path.join(vaultPath, "CLAUDE.md"));
+}
+
+function isDirectory(file) {
+  try {
+    return fs.statSync(file).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function uniquePaths(paths) {
+  const seen = new Set();
+  const result = [];
+  for (const item of paths) {
+    let key;
+    try {
+      key = fs.realpathSync(item);
+    } catch {
+      key = path.resolve(item);
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function expandTilde(value) {
+  const text = String(value || "");
+  if (text === "~") return os.homedir();
+  if (text.startsWith("~/")) return path.join(os.homedir(), text.slice(2));
+  return text;
 }
 
 export function vaultName(vaultPath) {
