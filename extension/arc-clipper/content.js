@@ -1,5 +1,9 @@
 const observedMediaUrls = new Set();
 let mediaScanTimer = null;
+let mediaScanInterval = null;
+let mediaMutationObserver = null;
+let mediaPerformanceObserver = null;
+let extensionContextValid = true;
 
 function collectClip(captureType) {
   if (captureType === "selection") return collectSelection();
@@ -246,6 +250,7 @@ function mediaPriority(url) {
 }
 
 function rememberMediaUrls(urls) {
+  if (!extensionContextAvailable()) return;
   const next = [];
   for (const raw of urls) {
     const url = absoluteUrl(raw);
@@ -254,14 +259,15 @@ function rememberMediaUrls(urls) {
     next.push(url);
   }
   if (!next.length) return;
-  chrome.runtime.sendMessage({
+  sendObservedMediaMessage({
     type: "llmwiki:observed-media",
     pageURL: location.href,
     mediaURLs: next
-  }).catch?.(() => {});
+  });
 }
 
 function scanMediaElements() {
+  if (!extensionContextAvailable()) return;
   const urls = [];
   for (const element of document.querySelectorAll?.("img, video, audio, source, a[href]") || []) {
     urls.push(...mediaUrlsFromElement(element));
@@ -270,11 +276,13 @@ function scanMediaElements() {
 }
 
 function scanPerformanceEntries() {
+  if (!extensionContextAvailable()) return;
   const entries = performance.getEntriesByType?.("resource") || [];
   rememberMediaUrls(entries.map((entry) => entry.name));
 }
 
 function scheduleMediaScan() {
+  if (!extensionContextAvailable()) return;
   if (mediaScanTimer) return;
   mediaScanTimer = setTimeout(() => {
     mediaScanTimer = null;
@@ -284,6 +292,7 @@ function scheduleMediaScan() {
 }
 
 function installMediaListeners() {
+  if (!extensionContextAvailable()) return;
   for (const element of document.querySelectorAll?.("video, audio") || []) {
     if (element.dataset.llmWikiMediaObserved === "true") continue;
     element.dataset.llmWikiMediaObserved = "true";
@@ -294,11 +303,11 @@ function installMediaListeners() {
 }
 
 if (document.documentElement) {
-  const observer = new MutationObserver(() => {
+  mediaMutationObserver = new MutationObserver(() => {
     installMediaListeners();
     scheduleMediaScan();
   });
-  observer.observe(document.documentElement, {
+  mediaMutationObserver.observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -308,10 +317,11 @@ if (document.documentElement) {
 
 if (typeof PerformanceObserver !== "undefined") {
   try {
-    const performanceObserver = new PerformanceObserver((list) => {
+    mediaPerformanceObserver = new PerformanceObserver((list) => {
+      if (!extensionContextAvailable()) return;
       rememberMediaUrls(list.getEntries().map((entry) => entry.name));
     });
-    performanceObserver.observe({ entryTypes: ["resource"] });
+    mediaPerformanceObserver.observe({ entryTypes: ["resource"] });
   } catch {
     // Periodic scans below still cover older browser behavior.
   }
@@ -319,8 +329,49 @@ if (typeof PerformanceObserver !== "undefined") {
 
 installMediaListeners();
 scheduleMediaScan();
-setInterval(() => {
+mediaScanInterval = setInterval(() => {
+  if (!extensionContextAvailable()) return;
   installMediaListeners();
   scanMediaElements();
   scanPerformanceEntries();
 }, 1500);
+
+function sendObservedMediaMessage(message) {
+  if (!extensionContextAvailable()) return;
+  try {
+    const result = chrome.runtime.sendMessage(message);
+    result?.catch?.(() => {
+      if (!extensionContextAvailable()) invalidateExtensionContext();
+    });
+  } catch {
+    invalidateExtensionContext();
+  }
+}
+
+function extensionContextAvailable() {
+  if (!extensionContextValid) return false;
+  try {
+    if (typeof chrome === "undefined" || !chrome.runtime?.id) {
+      invalidateExtensionContext();
+      return false;
+    }
+    return true;
+  } catch {
+    invalidateExtensionContext();
+    return false;
+  }
+}
+
+function invalidateExtensionContext() {
+  extensionContextValid = false;
+  if (mediaScanTimer) {
+    clearTimeout(mediaScanTimer);
+    mediaScanTimer = null;
+  }
+  if (mediaScanInterval) {
+    clearInterval(mediaScanInterval);
+    mediaScanInterval = null;
+  }
+  mediaMutationObserver?.disconnect?.();
+  mediaPerformanceObserver?.disconnect?.();
+}
