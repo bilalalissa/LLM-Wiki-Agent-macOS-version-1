@@ -32,3 +32,11 @@
 - **Cause:** Startup auto-ingest recursively walked `raw/assets/` before filtering it out. Browser media captures can store many stream chunks there, which can monopolize the Node event loop during startup scans.
 - **Fix:** Raw candidate scanning now skips `raw/assets/` and `raw/processed/` before descending into those folders. Startup ingest also yields between vault work so the HTTP server can answer UI and extension requests.
 - **Verification:** `curl --max-time 3 http://127.0.0.1:8789/api/status`, `curl --max-time 3 http://127.0.0.1:8789/api/vaults`, and `npm test`.
+
+## 2026-05-31 - Desktop Topics Sidebar Overlapped Header And Chat Controls
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The `Topics & Insights` sidebar covered the header actions and made the chat control bar look cramped/overlapped on desktop windows.
+- **Cause:** The sidebar used a fixed position over the page while `main` was centered with a max width and right padding, so the two areas did not reserve separate layout space.
+- **Fix:** Desktop layout now reserves a right rail for the topics sidebar, widens the main content area, moves the sidebar below the header line, and lets header actions wrap when needed.
+- **Verification:** `node --check src/server.mjs` and app relaunch.
