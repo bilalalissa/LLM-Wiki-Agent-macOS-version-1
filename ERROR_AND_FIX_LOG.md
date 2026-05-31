@@ -24,3 +24,11 @@
 - **Cause:** The previous content script instance kept running after Arc invalidated the old extension context.
 - **Fix:** Observed-media messages now go through a guarded runtime sender that silently skips sends when the extension context has been invalidated.
 - **Verification:** `node --check extension/arc-clipper/content.js`.
+
+## 2026-05-31 - Agent UI And Extension Could Not Connect While Startup Scan Was Running
+
+- **Area:** `src/vaults.mjs`, `src/server.mjs`
+- **Symptom:** The native app opened, but tabs were empty, Obsidian content did not load, `/api/status` timed out, and the browser extension could not reach the agent even though port `8789` was listening.
+- **Cause:** Startup auto-ingest recursively walked `raw/assets/` before filtering it out. Browser media captures can store many stream chunks there, which can monopolize the Node event loop during startup scans.
+- **Fix:** Raw candidate scanning now skips `raw/assets/` and `raw/processed/` before descending into those folders. Startup ingest also yields between vault work so the HTTP server can answer UI and extension requests.
+- **Verification:** `curl --max-time 3 http://127.0.0.1:8789/api/status`, `curl --max-time 3 http://127.0.0.1:8789/api/vaults`, and `npm test`.

@@ -10,6 +10,7 @@ import {
   sharedSettingsPath,
   updateSharedSettingsForVault
 } from "../src/shared-settings.mjs";
+import { listRawCandidates } from "../src/vaults.mjs";
 
 function makeConfig(root) {
   return {
@@ -92,4 +93,18 @@ test("shared settings default reflects high-level plan progress fields without s
   assert.equal(settings.provider.mode, "openai_subscription");
   assert.equal(settings.provider.transport, "mac_bridge");
   assert.ok(Array.isArray(settings.lastKnownAgents));
+});
+
+test("raw candidate scan skips processed and asset folders before descent", () => {
+  const { vault } = makeVaultRoot();
+  fs.mkdirSync(path.join(vault, "raw", "inbox"), { recursive: true });
+  fs.mkdirSync(path.join(vault, "raw", "assets", "browser-clips", "package"), { recursive: true });
+  fs.mkdirSync(path.join(vault, "raw", "processed"), { recursive: true });
+  fs.writeFileSync(path.join(vault, "raw", "inbox", "note.md"), "# Note\n");
+  fs.writeFileSync(path.join(vault, "raw", "assets", "browser-clips", "package", "chunk.m4s"), "media");
+  fs.writeFileSync(path.join(vault, "raw", "processed", "old.md"), "# Old\n");
+
+  const rel = listRawCandidates(vault).map((file) => path.relative(vault, file));
+
+  assert.deepEqual(rel, [path.join("raw", "inbox", "note.md")]);
 });

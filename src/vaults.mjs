@@ -120,13 +120,8 @@ export function listRawCandidates(vaultPath) {
   const rawDir = path.join(vaultPath, "raw");
   if (!fs.existsSync(rawDir)) return [];
   const result = [];
-  walk(rawDir, result);
-  return result.filter((file) => {
-    const rel = path.relative(rawDir, file);
-    if (rel.startsWith(`processed${path.sep}`)) return false;
-    if (rel.startsWith(`assets${path.sep}`)) return false;
-    return isIngestibleRawFile(file);
-  });
+  walkRawCandidates(rawDir, rawDir, result);
+  return result;
 }
 
 const ingestibleExtensions = new Set([
@@ -167,6 +162,19 @@ function walk(dir, result) {
     if (entry.isDirectory()) {
       walk(file, result);
     } else {
+      result.push(file);
+    }
+  }
+}
+
+function walkRawCandidates(rawDir, dir, result) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    const rel = path.relative(rawDir, file);
+    if (entry.isDirectory()) {
+      if (rel === "processed" || rel === "assets") continue;
+      walkRawCandidates(rawDir, file, result);
+    } else if (isIngestibleRawFile(file)) {
       result.push(file);
     }
   }

@@ -460,12 +460,15 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(config.chatPort, config.bridgeHost, () => {
   console.log(`LLM Wiki chat UI: http://${config.bridgeHost}:${config.chatPort}`);
-  setTimeout(startAutoIngest, 1500);
+  setTimeout(() => {
+    void startAutoIngest();
+  }, 1500);
 });
 
-function startAutoIngest() {
+async function startAutoIngest() {
   for (const vault of listVaults(config.vaultsRoot)) {
     bootstrapVault(vault, config);
+    await yieldToServer();
   }
   if (process.env.LLM_WIKI_BACKFILL_ON_START === "1") {
     const backfilled = backfillLearningSections(config);
@@ -644,6 +647,7 @@ async function runAutoIngest() {
       detail: total ? "Auto-ingest started." : "No pending files."
     };
     for (const [index, vault] of vaults.entries()) {
+      await yieldToServer();
       const bootstrapped = bootstrapVault(vault, config);
       if (bootstrapped.length) {
         console.log(`[bootstrap] ${vaultName(vault)}: ${bootstrapped.join(", ")}`);
@@ -655,6 +659,7 @@ async function runAutoIngest() {
         detail: `Scanning ${vaultName(vault)}.`
       });
       const results = await ingestVault(vault, config, provider);
+      await yieldToServer();
       completed += candidateCounts[index];
       count += results.length;
       for (const result of results) {
@@ -713,6 +718,10 @@ function readBody(request, maxBytes = 64 * 1024 * 1024) {
     request.on("end", () => resolve(body));
     request.on("error", reject);
   });
+}
+
+function yieldToServer() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function corsHeaders(extra = {}) {
