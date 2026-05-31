@@ -7,6 +7,7 @@ const progressWrap = document.querySelector("#progress-wrap");
 const progressEl = document.querySelector("#progress");
 const progressLabel = document.querySelector("#progress-label");
 const progressPercent = document.querySelector("#progress-percent");
+const dismissStateButton = document.querySelector("#dismiss-state");
 const preview = document.querySelector("#preview");
 const previewTitleInput = document.querySelector("#preview-title");
 const previewTagsInput = document.querySelector("#preview-tags");
@@ -14,16 +15,22 @@ const mediaList = document.querySelector("#media-list");
 const submitButton = document.querySelector("#submit");
 
 let activeRequestId = "";
+let statePoll = 0;
 
 document.querySelector("#refresh").addEventListener("click", refreshVaults);
 document.querySelector("#clip-selection").addEventListener("click", () => prepare("selection"));
 document.querySelector("#clip-page").addEventListener("click", () => prepare("page"));
 document.querySelector("#clip-media").addEventListener("click", () => prepare("media"));
 submitButton.addEventListener("click", submitPrepared);
+dismissStateButton.addEventListener("click", clearClipState);
 serverUrlInput.addEventListener("change", saveSettings);
 vaultSelect.addEventListener("change", saveSettings);
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === "clipState") {
+    renderClipState(message.state);
+    return false;
+  }
   if (message?.type !== "clipProgress" || message.requestId !== activeRequestId) return false;
   showProgress(message.percent, message.message);
   return false;
@@ -31,6 +38,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
 await loadSettings();
 await refreshVaults();
+await restoreClipState();
 
 async function loadSettings() {
   const settings = await chrome.storage.sync.get({
@@ -76,7 +84,9 @@ async function prepare(captureType) {
   activeRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   preview.hidden = true;
   submitButton.disabled = true;
+  setActionButtonsDisabled(true);
   showProgress(2, "Starting...");
+  dismissStateButton.hidden = true;
   setStatus("Preparing clip. Review details before submitting.");
   chrome.runtime.sendMessage({ type: "prepareClip", captureType, requestId: activeRequestId }, (response) => {
     if (chrome.runtime.lastError) {
@@ -90,12 +100,16 @@ async function prepare(captureType) {
     renderPreview(response.result);
     showProgress(100, "Ready to submit.");
     setStatus("Review the clip details, then submit.");
+    setActionButtonsDisabled(false);
   });
+  startStatePolling();
 }
 
 function submitPrepared() {
   submitButton.disabled = true;
+  setActionButtonsDisabled(true);
   setStatus("Submitting to vault...");
+  showProgress(10, "Submitting to vault...");
   chrome.runtime.sendMessage({
     type: "submitPreparedClip",
     updates: {
@@ -113,8 +127,11 @@ function submitPrepared() {
     }
     setStatus(`Saved to ${response.result.file}`);
     preview.hidden = true;
-    progressWrap.hidden = true;
+    showProgress(100, "Saved.");
+    dismissStateButton.hidden = false;
+    setActionButtonsDisabled(false);
   });
+  startStatePolling();
 }
 
 function renderPreview(result) {
@@ -160,6 +177,79 @@ function renderPreview(result) {
   }
   preview.hidden = false;
   submitButton.disabled = false;
+  setActionButtonsDisabled(false);
+}
+
+async function restoreClipState() {
+  const response = await sendRuntimeMessage({ type: "getClipState" }).catch(() => null);
+  if (response?.ok) renderClipState(response.state);
+}
+
+function renderClipState(state) {
+  if (!state || state.status === "idle") return;
+  activeRequestId = state.requestId || activeRequestId;
+  if (state.status === "preparing") {
+    preview.hidden = true;
+    submitButton.disabled = true;
+    dismissStateButton.hidden = true;
+    setActionButtonsDisabled(true);
+    showProgress(state.percent || 2, state.message || "Preparing clip...");
+    setStatus("Preparing continues in the background. You can reopen this popup to check progress.");
+    startStatePolling();
+    return;
+  }
+  if (state.status === "ready") {
+    if (state.result) renderPreview(state.result);
+    showProgress(100, state.message || "Ready to submit.");
+    dismissStateButton.hidden = true;
+    setStatus("Clip is ready. Review the title and tags, then submit.");
+    stopStatePolling();
+    return;
+  }
+  if (state.status === "submitting") {
+    submitButton.disabled = true;
+    dismissStateButton.hidden = true;
+    setActionButtonsDisabled(true);
+    showProgress(state.percent || 10, state.message || "Submitting to vault...");
+    setStatus("Submitting continues in the background. You can reopen this popup to check progress.");
+    startStatePolling();
+    return;
+  }
+  if (state.status === "saved") {
+    preview.hidden = true;
+    showProgress(100, state.message || "Saved.");
+    dismissStateButton.hidden = false;
+    setActionButtonsDisabled(false);
+    setStatus(state.savedResult?.file ? `Saved to ${state.savedResult.file}` : "Saved.");
+    stopStatePolling();
+    return;
+  }
+  if (state.status === "error") {
+    fail(state.error || state.message || "Clip failed.");
+    dismissStateButton.hidden = false;
+    setActionButtonsDisabled(false);
+    stopStatePolling();
+  }
+}
+
+async function clearClipState() {
+  await sendRuntimeMessage({ type: "clearClipState" }).catch(() => null);
+  progressWrap.hidden = true;
+  preview.hidden = true;
+  dismissStateButton.hidden = true;
+  setActionButtonsDisabled(false);
+  setStatus("Ready.");
+}
+
+function startStatePolling() {
+  if (statePoll) return;
+  statePoll = setInterval(restoreClipState, 1000);
+}
+
+function stopStatePolling() {
+  if (!statePoll) return;
+  clearInterval(statePoll);
+  statePoll = 0;
 }
 
 function mediaLabel(media) {
@@ -192,8 +282,27 @@ function showProgress(percent, message) {
 
 function fail(message) {
   submitButton.disabled = true;
+  setActionButtonsDisabled(false);
   setStatus(message);
   showProgress(0, "Stopped.");
+}
+
+function setActionButtonsDisabled(disabled) {
+  document.querySelector("#clip-selection").disabled = disabled;
+  document.querySelector("#clip-page").disabled = disabled;
+  document.querySelector("#clip-media").disabled = disabled;
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
 }
 
 function serverUrl() {

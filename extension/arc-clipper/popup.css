@@ -72,6 +72,11 @@ button:hover {
   border-color: var(--accent);
 }
 
+button.quiet {
+  width: 100%;
+  margin-top: 8px;
+}
+
 .row {
   display: flex;
   align-items: end;

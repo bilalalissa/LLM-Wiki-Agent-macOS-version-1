@@ -6,6 +6,16 @@ const maxManifestDepth = 3;
 const mediaDownloadConcurrency = 6;
 const mediaByTab = new Map();
 let preparedClip = null;
+let clipState = {
+  status: "idle",
+  requestId: "",
+  percent: 0,
+  message: "Ready.",
+  result: null,
+  savedResult: null,
+  error: "",
+  updatedAt: Date.now()
+};
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -62,15 +72,53 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "prepareClip") {
+    updateClipState({
+      status: "preparing",
+      requestId: message.requestId || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      percent: 2,
+      message: "Starting...",
+      result: null,
+      savedResult: null,
+      error: ""
+    });
     preparePopupClip(message.captureType, message.requestId)
       .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
+      .catch((error) => {
+        updateClipState({ status: "error", percent: 0, message: error.message, error: error.message });
+        sendResponse({ ok: false, error: error.message });
+      });
     return true;
   }
   if (message?.type === "submitPreparedClip") {
+    updateClipState({
+      status: "submitting",
+      percent: 10,
+      message: "Submitting to vault...",
+      error: ""
+    });
     submitPreparedClip(message.updates || {})
       .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
+      .catch((error) => {
+        updateClipState({ status: "error", percent: 0, message: error.message, error: error.message });
+        sendResponse({ ok: false, error: error.message });
+      });
+    return true;
+  }
+  if (message?.type === "getClipState") {
+    getClipState().then((state) => sendResponse({ ok: true, state }));
+    return true;
+  }
+  if (message?.type === "clearClipState") {
+    preparedClip = null;
+    updateClipState({
+      status: "idle",
+      requestId: "",
+      percent: 0,
+      message: "Ready.",
+      result: null,
+      savedResult: null,
+      error: ""
+    }).then(() => sendResponse({ ok: true }));
     return true;
   }
   return false;
@@ -99,8 +147,16 @@ async function preparePopupClip(captureType, requestId) {
   }
   const payload = await enrichMedia(response.payload, tab.id, requestId);
   preparedClip = payload;
-  progress(requestId, 100, "Clip is ready to review.");
-  return summarizePreparedClip(payload);
+  const result = summarizePreparedClip(payload);
+  updateClipState({
+    status: "ready",
+    requestId,
+    percent: 100,
+    message: "Clip is ready to review.",
+    result,
+    error: ""
+  });
+  return result;
 }
 
 async function collectAndSend(tabId, captureType) {
@@ -124,6 +180,13 @@ async function submitPreparedClip(updates = {}) {
   };
   const result = await postClip(preparedClip);
   preparedClip = null;
+  updateClipState({
+    status: "saved",
+    percent: 100,
+    message: `Saved to ${result.file}`,
+    savedResult: result,
+    error: ""
+  });
   return result;
 }
 
@@ -573,7 +636,11 @@ function summarizePreparedClip(payload) {
     url: payload?.url || "",
     captureType: payload?.captureType || "page",
     textLength: String(payload?.text || "").length,
-    media,
+    media: media.map((item) => {
+      const next = { ...item };
+      delete next.dataUrl;
+      return next;
+    }),
     summary
   };
 }
@@ -607,12 +674,54 @@ function mediaSummary(media) {
 
 function progress(requestId, percent, message) {
   if (!requestId) return;
+  updateClipState({
+    requestId,
+    percent,
+    message,
+    status: clipState.status === "submitting" ? "submitting" : "preparing"
+  });
   chrome.runtime.sendMessage({
     type: "clipProgress",
     requestId,
     percent,
     message
   }).catch?.(() => {});
+}
+
+async function getClipState() {
+  const stored = await chrome.storage.local.get({ clipState: null });
+  if (stored.clipState && stored.clipState.updatedAt > clipState.updatedAt) {
+    clipState = stored.clipState;
+  }
+  return clipState;
+}
+
+async function updateClipState(next) {
+  clipState = {
+    ...clipState,
+    ...next,
+    updatedAt: Date.now()
+  };
+  await chrome.storage.local.set({ clipState });
+  updateBadge(clipState);
+  chrome.runtime.sendMessage({
+    type: "clipState",
+    state: clipState
+  }).catch?.(() => {});
+}
+
+function updateBadge(state) {
+  const status = state?.status || "idle";
+  const text = status === "preparing" ? "..." :
+    status === "submitting" ? "UP" :
+    status === "ready" ? "OK" :
+    status === "saved" ? "✓" :
+    status === "error" ? "!" : "";
+  chrome.action.setBadgeText({ text }).catch?.(() => {});
+  const color = status === "error" ? "#dc2626" :
+    status === "ready" || status === "saved" ? "#15803d" :
+    status === "preparing" || status === "submitting" ? "#8a5a19" : "#6b7280";
+  chrome.action.setBadgeBackgroundColor({ color }).catch?.(() => {});
 }
 
 async function firstVault(serverUrl) {

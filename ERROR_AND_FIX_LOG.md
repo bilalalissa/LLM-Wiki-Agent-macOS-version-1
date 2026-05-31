@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-05-31 - Extension Popup Closed During Long Clip Work
+
+- **Area:** `extension/arc-clipper`
+- **Symptom:** If the user clicked elsewhere or switched apps, Arc closed the extension popup and the user lost visible feedback while media preparation or submit was still running.
+- **Cause:** Chromium extension popups are intentionally dismissed on focus loss, and progress was only rendered in the open popup callback.
+- **Fix:** Clip preparation/submission state now lives in the background worker, is mirrored to extension storage, restores when the popup is reopened, and uses action badge text for ongoing/ready/saved/error indication.
+- **Verification:** `node --check extension/arc-clipper/background.js`, `node --check extension/arc-clipper/popup.js`, and `npm test`.
+
 ## 2026-05-31 - App Tabs Empty While Vault Scans Blocked The Server
 
 - **Area:** `src/server.mjs`, `src/tab-data-worker.mjs`
