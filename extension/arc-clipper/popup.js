@@ -13,6 +13,8 @@ const previewTitleInput = document.querySelector("#preview-title");
 const previewTagsInput = document.querySelector("#preview-tags");
 const mediaList = document.querySelector("#media-list");
 const submitButton = document.querySelector("#submit");
+const videoPreflight = document.querySelector("#video-preflight");
+const videoPreflightMessage = document.querySelector("#video-preflight-message");
 
 let activeRequestId = "";
 let statePoll = 0;
@@ -114,7 +116,8 @@ function submitPrepared() {
     type: "submitPreparedClip",
     updates: {
       title: previewTitleInput.value,
-      tags: previewTagsInput.value
+      tags: previewTagsInput.value,
+      videoHandling: selectedVideoHandling()
     }
   }, (response) => {
     if (chrome.runtime.lastError) {
@@ -139,6 +142,8 @@ function renderPreview(result) {
   previewTitleInput.value = result.title || "";
   previewTagsInput.value = Array.isArray(result.tags) ? result.tags.join(", ") : "";
   document.querySelector("#preview-text").textContent = `${result.textLength || 0} characters`;
+  videoPreflight.hidden = true;
+  videoPreflightMessage.textContent = "";
   const summary = result.summary || {};
   document.querySelector("#preview-media-summary").textContent = result.singleVideoRequest
     ? `Single ${result.singleVideoRequest.provider || "page"} video requested; chunks excluded`
@@ -188,8 +193,42 @@ function renderPreview(result) {
     mediaList.append(item);
   }
   preview.hidden = false;
-  submitButton.disabled = false;
+  submitButton.disabled = Boolean(result.singleVideoRequest);
   setActionButtonsDisabled(false);
+  if (result.singleVideoRequest) loadVideoPreflight(result);
+}
+
+async function loadVideoPreflight(result) {
+  videoPreflight.hidden = false;
+  videoPreflightMessage.textContent = "Estimating video size before submit...";
+  try {
+    const response = await fetch(`${serverUrl()}/api/clip-preflight`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        captureType: result.captureType,
+        url: result.url,
+        singleVideoRequest: result.singleVideoRequest
+      })
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || "Video preflight failed.");
+    const recommended = data.recommendedHandling || "transcript-only";
+    videoPreflightMessage.textContent = [
+      data.title ? `Title: ${data.title}` : "",
+      `Estimated size: ${data.estimatedLabel || "unknown"}.`,
+      data.warning || "Choose how the agent should handle this video before processing.",
+      data.error ? `Preflight note: ${data.error}` : ""
+    ].filter(Boolean).join(" ");
+    const radio = videoPreflight.querySelector(`input[value="${recommended}"]`);
+    if (radio) radio.checked = true;
+  } catch (error) {
+    videoPreflightMessage.textContent = `${error.message} Choose transcript-only unless you explicitly want to try a video download.`;
+    const radio = videoPreflight.querySelector('input[value="transcript-only"]');
+    if (radio) radio.checked = true;
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
 async function restoreClipState() {
@@ -266,6 +305,11 @@ function stopStatePolling() {
 
 function mediaLabel(media) {
   return media.alt || media.filename || media.url || "Media item";
+}
+
+function selectedVideoHandling() {
+  if (videoPreflight.hidden) return "";
+  return videoPreflight.querySelector('input[name="video-handling"]:checked')?.value || "transcript-only";
 }
 
 function isStreamChunkMedia(media) {

@@ -7,6 +7,43 @@ const maxTextChars = 240000;
 const maxHtmlChars = 120000;
 const maxAssetBytes = 60 * 1024 * 1024;
 const maxTranscriptChars = 180000;
+const maxRawVideoBytes = Number(process.env.LLM_WIKI_VIDEO_RAW_MAX_BYTES || 300 * 1024 * 1024);
+const youtubeVideoFormat = "b[ext=mp4][height<=360]/bv*[height<=360][ext=mp4]+ba[ext=m4a]/bv*[height<=360]+ba/b[height<=360]/b";
+
+export async function preflightBrowserClip(_config, payload) {
+  const captureType = normalizeCaptureType(payload?.captureType);
+  const pageVideo = pageVideoRequest(payload, captureType);
+  if (!pageVideo) return { requiresChoice: false };
+  const estimate = await estimateSinglePageVideo(pageVideo.url).catch((error) => ({
+    ok: false,
+    error: cleanText(error.message, 500)
+  }));
+  const estimatedBytes = Number(estimate.estimatedBytes || 0);
+  const tooLargeForRaw = estimatedBytes > maxRawVideoBytes;
+  return {
+    requiresChoice: true,
+    provider: pageVideo.provider,
+    url: pageVideo.url,
+    ok: estimate.ok !== false,
+    title: estimate.title || "",
+    duration: estimate.duration || 0,
+    format: estimate.format || "",
+    estimatedBytes,
+    estimatedLabel: estimatedBytes ? formatBytes(estimatedBytes) : "unknown size",
+    rawLimitBytes: maxRawVideoBytes,
+    rawLimitLabel: formatBytes(maxRawVideoBytes),
+    recommendedHandling: tooLargeForRaw ? "transcript-only" : "raw-copy",
+    warning: tooLargeForRaw
+      ? `Estimated video size is ${formatBytes(estimatedBytes)}, above the ${formatBytes(maxRawVideoBytes)} raw-vault safety limit.`
+      : "",
+    error: estimate.error || "",
+    options: [
+      { value: "transcript-only", label: "Save transcript only", description: "Fastest and safest. No large video file is saved." },
+      { value: "temp-copy", label: "Download temporary copy", description: `Save the video outside raw/ in ${externalClipDir()}.` },
+      { value: "raw-copy", label: "Save video into vault raw assets", description: "Best for permanent local archive; can be large." }
+    ]
+  };
+}
 
 export async function saveBrowserClip(config, payload) {
   const vaultPath = resolveVault(config, payload?.vault);
@@ -92,7 +129,9 @@ function renderClipMarkdown({ payload, captureType, title, tags, now, savedMedia
       if (media.kind === "video-download") {
         lines.push(`- ${media.label}`);
         lines.push(`  - Download status: ${media.status || "unknown"}`);
+        if (media.handling) lines.push(`  - Handling: ${media.handling}`);
         if (media.path) lines.push(`![[${media.path}]]`);
+        if (media.externalPath) lines.push(`  - External temporary file: \`${media.externalPath}\``);
         if (media.transcriptPath) lines.push(`  - Transcript file: [[${media.transcriptPath}]]`);
         if (media.error) lines.push(`  - Error: ${media.error}`);
       } else if (media.kind === "stream-reference") {
@@ -192,28 +231,52 @@ function pageVideoRequest(payload, captureType) {
   if (!isYouTubePageUrl(url)) return null;
   return {
     provider: "youtube",
-    url
+    url,
+    handling: cleanText(explicit.handling || explicit.downloadMode || "", 40)
   };
 }
 
 async function saveSinglePageVideo(vaultPath, request, stamp, title) {
   const label = "Single YouTube video file";
-  const dir = path.join(vaultPath, "raw", "assets", "browser-clips");
-  const prefix = `${stamp}--single-video--${slugify(title || "youtube-video")}`;
-  const sourceUrl = request.url;
-  ensureDir(dir);
-
+  let handling = normalizeVideoHandling(request.handling);
   if (process.env.LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD === "1") {
     return {
       label,
       kind: "video-download",
       status: "skipped",
-      sourceUrl,
+      handling: handling || "raw-copy",
+      sourceUrl: request.url,
       error: "External video download is disabled by LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1."
     };
   }
+  if (!handling) {
+    const estimate = await estimateSinglePageVideo(request.url).catch(() => null);
+    handling = Number(estimate?.estimatedBytes || 0) > maxRawVideoBytes ? "transcript-only" : "raw-copy";
+  }
+  const dir = handling === "temp-copy"
+    ? externalClipDir()
+    : path.join(vaultPath, "raw", "assets", "browser-clips");
+  const prefix = `${stamp}--single-video--${slugify(title || "youtube-video")}`;
+  const sourceUrl = request.url;
+  ensureDir(dir);
 
   const ytDlp = ytDlpInvocation();
+  if (handling === "transcript-only") {
+    const transcript = await saveYoutubeTranscript(vaultPath, dir, prefix, sourceUrl, ytDlp).catch((error) => ({
+      error: cleanText(error.message, 500)
+    }));
+    return {
+      label,
+      kind: "video-download",
+      status: transcript?.path ? "transcript-only" : "failed",
+      handling,
+      sourceUrl,
+      transcriptPath: transcript?.path || "",
+      transcriptText: transcript?.text || "",
+      error: transcript?.error || ""
+    };
+  }
+
   const outputTemplate = path.join(dir, `${prefix}.%(ext)s`);
   try {
     await runCommand(ytDlp.command, [
@@ -227,7 +290,7 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
       "--convert-subs",
       "srt",
       "-f",
-      "b[ext=mp4][height<=360]/bv*[height<=360][ext=mp4]+ba[ext=m4a]/bv*[height<=360]+ba/b[height<=360]/b",
+      youtubeVideoFormat,
       "--merge-output-format",
       "mp4",
       "-o",
@@ -240,6 +303,7 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
       label,
       kind: "video-download",
       status: "failed",
+      handling,
       sourceUrl,
       transcriptPath: transcript?.path || "",
       transcriptText: transcript?.text || "",
@@ -257,6 +321,7 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
       label,
       kind: "video-download",
       status: "failed",
+      handling,
       sourceUrl,
       transcriptPath: transcriptFile ? relativeVaultPath(vaultPath, transcriptFile) : "",
       transcriptText: transcriptFile ? readTranscriptText(transcriptFile) : "",
@@ -267,7 +332,9 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
     label,
     kind: "video-download",
     status: "downloaded",
-    path: relativeVaultPath(vaultPath, videoFile),
+    path: handling === "raw-copy" ? relativeVaultPath(vaultPath, videoFile) : "",
+    externalPath: handling === "temp-copy" ? videoFile : "",
+    handling,
     transcriptPath: transcriptFile ? relativeVaultPath(vaultPath, transcriptFile) : "",
     transcriptText: transcriptFile ? readTranscriptText(transcriptFile) : "",
     sourceUrl
@@ -295,8 +362,33 @@ async function saveYoutubeTranscript(vaultPath, dir, prefix, sourceUrl, ytDlp) {
   const transcriptFile = preferredTranscriptFile(files);
   if (!transcriptFile) return null;
   return {
-    path: relativeVaultPath(vaultPath, transcriptFile),
+    path: transcriptFile.startsWith(vaultPath) ? relativeVaultPath(vaultPath, transcriptFile) : "",
+    externalPath: transcriptFile.startsWith(vaultPath) ? "" : transcriptFile,
     text: readTranscriptText(transcriptFile)
+  };
+}
+
+async function estimateSinglePageVideo(sourceUrl) {
+  const ytDlp = ytDlpInvocation();
+  const output = await runCommand(ytDlp.command, [
+    ...ytDlp.argsPrefix,
+    "--no-playlist",
+    "--simulate",
+    "--dump-single-json",
+    "-f",
+    youtubeVideoFormat,
+    sourceUrl
+  ], { timeoutMs: 90 * 1000, maxOutputChars: 3 * 1024 * 1024 });
+  const data = JSON.parse(output);
+  const requested = Array.isArray(data.requested_formats) ? data.requested_formats : [];
+  const requestedBytes = requested.reduce((sum, item) => sum + Number(item.filesize || item.filesize_approx || 0), 0);
+  const estimatedBytes = Number(data.filesize || data.filesize_approx || requestedBytes || 0);
+  return {
+    ok: true,
+    title: cleanText(data.title || "", 200),
+    duration: Number(data.duration || 0),
+    format: cleanText(data.format_id || data.format || "", 160),
+    estimatedBytes
   };
 }
 
@@ -312,16 +404,18 @@ function preferredTranscriptFile(files) {
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
+    let stdout = "";
+    let stderr = "";
+    const maxOutputChars = options.maxOutputChars || 4000;
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`${command} timed out while downloading the single page video.`));
     }, options.timeoutMs || 0x7fffffff);
     child.stdout.on("data", (chunk) => {
-      output = `${output}${chunk}`.slice(-4000);
+      stdout = `${stdout}${chunk}`.slice(-maxOutputChars);
     });
     child.stderr.on("data", (chunk) => {
-      output = `${output}${chunk}`.slice(-4000);
+      stderr = `${stderr}${chunk}`.slice(-maxOutputChars);
     });
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -334,12 +428,31 @@ function runCommand(command, args, options = {}) {
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) {
-        resolve(output);
+        resolve(stdout || stderr);
       } else {
+        const output = `${stdout}\n${stderr}`.trim();
         reject(new Error(`yt-dlp failed with exit code ${code}. ${output.trim()}`.trim()));
       }
     });
   });
+}
+
+function normalizeVideoHandling(value) {
+  const text = String(value || "").trim();
+  return new Set(["transcript-only", "temp-copy", "raw-copy"]).has(text) ? text : "";
+}
+
+function externalClipDir() {
+  const home = process.env.HOME || process.cwd();
+  return path.join(home, "Downloads", "LLM Wiki Agent Temporary Clips");
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
 }
 
 function ytDlpInvocation() {

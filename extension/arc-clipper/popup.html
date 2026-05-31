@@ -48,6 +48,22 @@
         Tags
         <input id="preview-tags" type="text" placeholder="meeting, research, ai/agents">
       </label>
+      <section id="video-preflight" class="preflight" hidden>
+        <strong id="video-preflight-title">Video handling</strong>
+        <p id="video-preflight-message"></p>
+        <label class="radio-row">
+          <input type="radio" name="video-handling" value="transcript-only">
+          <span>Save transcript only</span>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="video-handling" value="temp-copy">
+          <span>Download temporary copy outside raw/</span>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="video-handling" value="raw-copy">
+          <span>Save video into vault raw assets</span>
+        </label>
+      </section>
       <ol id="media-list"></ol>
       <button id="submit" type="button">Submit to vault</button>
     </section>

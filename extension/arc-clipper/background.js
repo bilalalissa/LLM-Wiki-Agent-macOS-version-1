@@ -178,6 +178,15 @@ async function submitPreparedClip(updates = {}) {
     ...(title ? { title } : {}),
     tags: normalizeClipTags(updates.tags)
   };
+  if (preparedClip.singleVideoRequest && updates.videoHandling) {
+    preparedClip = {
+      ...preparedClip,
+      singleVideoRequest: {
+        ...preparedClip.singleVideoRequest,
+        handling: updates.videoHandling
+      }
+    };
+  }
   const result = await postClip(preparedClip);
   preparedClip = null;
   updateClipState({

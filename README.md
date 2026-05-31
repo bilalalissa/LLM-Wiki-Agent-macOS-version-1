@@ -307,6 +307,8 @@ For video pages, start playback only long enough for the page to expose its medi
 
 For YouTube watch and Shorts pages, `Prepare page media` is stricter: the extension sends no detected `videoplayback` chunks, storyboard images, thumbnails, or sub-videos. It sends one page-video request to the local agent. The agent then saves one merged video under `raw/assets/browser-clips/` and writes available subtitle text into the generated raw source so the wiki can ingest and reason over the clip. Use this only for videos you have the right to archive.
 
+Before a YouTube page-video clip is submitted, the extension asks the local agent to estimate the selected single-video file size. If the estimate is above the raw-vault safety limit, the popup warns you and defaults to `Save transcript only`. You can instead choose `Download temporary copy outside raw/`, which stores the video under `~/Downloads/LLM Wiki Agent Temporary Clips/`, or explicitly choose `Save video into vault raw assets` when you want the large file archived in the vault.
+
 [Back to top](#top)
 
 ## How To Use The App

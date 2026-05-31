@@ -9,7 +9,7 @@ import { backfillLearningSections } from "./backfill-learning-sections.mjs";
 import { getConfig, setConfigFilePath } from "./config.mjs";
 import { answerQuestion } from "./chat-lib.mjs";
 import { saveChatAsRawSource } from "./chat-source.mjs";
-import { saveBrowserClip } from "./clip.mjs";
+import { preflightBrowserClip, saveBrowserClip } from "./clip.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
 import { addNote, deleteNote, saveNoteMedia, updateNote } from "./notes.mjs";
@@ -224,6 +224,19 @@ const server = http.createServer(async (request, response) => {
       const body = await readBody(request, 240 * 1024 * 1024);
       const result = await saveBrowserClip(config, JSON.parse(body || "{}"));
       runAutoIngest();
+      response.writeHead(200, corsHeaders({ "content-type": "application/json" }));
+      response.end(JSON.stringify(result));
+    } catch (error) {
+      response.writeHead(500, corsHeaders({ "content-type": "application/json" }));
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/clip-preflight") {
+    try {
+      const body = await readBody(request, 2 * 1024 * 1024);
+      const result = await preflightBrowserClip(config, JSON.parse(body || "{}"));
       response.writeHead(200, corsHeaders({ "content-type": "application/json" }));
       response.end(JSON.stringify(result));
     } catch (error) {

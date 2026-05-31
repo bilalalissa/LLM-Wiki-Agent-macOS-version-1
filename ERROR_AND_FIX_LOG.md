@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-05-31 - Large YouTube Clips Needed Preflight Options
+
+- **Area:** `src/clip.mjs`, `src/server.mjs`, `extension/arc-clipper`
+- **Symptom:** A large target video could fail or consume too much time/storage only after the user submitted the clip.
+- **Cause:** The single-video path downloaded during final submit without first estimating file size or asking the user where the large video should be saved.
+- **Fix:** Added `/api/clip-preflight` and popup preflight UI. YouTube clips now estimate selected format size before submit, warn when above the raw-vault safety limit, and offer transcript-only, temporary copy outside `raw/`, or explicit raw-vault video archive handling. The server also defaults large direct/API clips to transcript-only when no explicit handling choice is supplied.
+- **Verification:** `node --check src/clip.mjs`, `node --check src/server.mjs`, `node --check extension/arc-clipper/background.js`, `node --check extension/arc-clipper/popup.js`, and `npm test`.
+
 ## 2026-05-31 - YouTube Single-Video Download Needed JS Runtime
 
 - **Area:** `src/clip.mjs`, `README.md`
