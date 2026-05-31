@@ -290,11 +290,11 @@ When browser permissions allow media export, binary media is downloaded and save
 raw/assets/browser-clips/
 ```
 
-The extension watches visible media elements, resource timing entries, browser media requests, and readable stream manifests so images, PDFs, audio, video, and common streaming URLs are detected. It first tries to transfer the actual media bytes from the browser, including same-session media and manifest-expanded stream chunks when allowed. If that fails, the local agent tries a server-side download for public URLs. If neither route can access the file, the generated markdown source keeps the original media URL for traceability. The app's normal auto-ingest then processes the new raw source and updates the wiki.
+The extension watches visible media elements, resource timing entries, browser media requests, and readable stream manifests so images, PDFs, audio, video, and common streaming URLs are detected. For readable HLS/DASH manifests, it expands the source manifest first and requests the manifest-listed chunks directly instead of waiting for playback to load them. It then tries to transfer the actual media bytes from the browser, including same-session media and manifest-expanded stream chunks when allowed. If that fails, the local agent tries a server-side download for public URLs. If neither route can access the file, the generated markdown source keeps the original media URL for traceability. The app's normal auto-ingest then processes the new raw source and updates the wiki.
 
 The extension popup prepares clips before submission. It shows a progress bar, detected media details, how many media items were downloaded, and which items are URL-only. Click `Submit to vault` only after reviewing the prepared clip.
 
-For video pages, start playback long enough for the page to expose its media URLs, then click `Prepare page media`. The extension requests detected HLS/DASH manifests (`.m3u8` and `.mpd`) directly from the source and expands their segment/chunk URLs immediately instead of waiting for playback to finish. If a site does not expose a readable manifest, the extension falls back to observed media requests and URL-only traceability.
+For video pages, start playback only long enough for the page to expose its media manifest URL, then click `Prepare page media`. The extension requests detected HLS/DASH manifests (`.m3u8` and `.mpd`) directly from the source and expands their segment/chunk URLs immediately. It does not wait for playback to finish and it does not poll until chunks finish loading. If a site does not expose a readable manifest, hidden chunks cannot be requested directly; the generated source keeps any already-visible media URLs for traceability.
 
 [Back to top](#top)
 

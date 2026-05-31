@@ -1,13 +1,8 @@
 const defaultServerUrl = "http://127.0.0.1:8789";
 const maxInlineTransferChars = 180 * 1024 * 1024;
 const maxBrowserMediaBytes = 50 * 1024 * 1024;
-const maxManifestExpansionItems = 400;
+const maxManifestExpansionItems = 12000;
 const maxManifestDepth = 3;
-const mediaSettleMs = 1800;
-const mediaCapturePollMs = 1000;
-const mediaCaptureIdleMs = 7000;
-const mediaCapturePausedIdleMs = 5 * 60 * 1000;
-const mediaCaptureMaxMs = 3 * 60 * 60 * 1000;
 const mediaByTab = new Map();
 let preparedClip = null;
 
@@ -98,6 +93,7 @@ async function preparePopupClip(captureType, requestId) {
   if (!response?.ok) throw new Error(response?.error || "Could not collect browser content.");
   progress(requestId, 25, "Detecting media URLs...");
   if (captureType === "media") {
+    progress(requestId, 25, "Requesting stream manifests directly from source...");
     await collectMediaState(tab.id);
   }
   const payload = await enrichMedia(response.payload, tab.id, requestId);
@@ -404,7 +400,16 @@ function expandDashSegmentTemplates(xml, manifestUrl, limit) {
 function dashSegmentCount(xml, index = 0) {
   const tail = xml.slice(index, index + 20000);
   const timeline = tail.match(/<SegmentTimeline\b[\s\S]*?<\/SegmentTimeline>/i)?.[0] || "";
-  if (!timeline) return 120;
+  if (!timeline) {
+    const attrs = tail.match(/<SegmentTemplate\b([^>]*)>/i)?.[1] || "";
+    const duration = Number(attrValue(attrs, "duration") || 0);
+    const timescale = Number(attrValue(attrs, "timescale") || 1) || 1;
+    const presentationSeconds = parseIsoDurationSeconds(attrValue(xml, "mediaPresentationDuration"));
+    if (duration > 0 && presentationSeconds > 0) {
+      return Math.min(Math.max(Math.ceil(presentationSeconds / (duration / timescale)), 1), maxManifestExpansionItems);
+    }
+    return maxManifestExpansionItems;
+  }
   let total = 0;
   for (const match of timeline.matchAll(/<S\b([^>]*)\/?>/gi)) {
     const repeat = Number(attrValue(match[1] || "", "r") || 0);
@@ -412,6 +417,18 @@ function dashSegmentCount(xml, index = 0) {
     if (total >= maxManifestExpansionItems) break;
   }
   return Math.min(Math.max(total, 1), maxManifestExpansionItems);
+}
+
+function parseIsoDurationSeconds(value) {
+  const match = /^P(?:(\d+(?:\.\d+)?)Y)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i.exec(String(value || ""));
+  if (!match) return 0;
+  const [, years, months, days, hours, minutes, seconds] = match.map((item) => Number(item || 0));
+  return (years * 365 * 24 * 60 * 60) +
+    (months * 30 * 24 * 60 * 60) +
+    (days * 24 * 60 * 60) +
+    (hours * 60 * 60) +
+    (minutes * 60) +
+    seconds;
 }
 
 function resolveDashTemplate(template, manifestUrl, representationId, number) {
@@ -476,77 +493,12 @@ function uniqueMediaItems(items) {
   return result;
 }
 
-async function waitForMediaCaptureCompletion(tabId, requestId) {
-  const startedAt = Date.now();
-  let lastCount = observedMediaUrls(tabId).length;
-  let lastChangeAt = Date.now();
-  let sawActivePlayback = false;
-  let sawPlayableMedia = false;
-  progress(requestId, 25, "Collecting chunks while media plays...");
-
-  while (Date.now() - startedAt < mediaCaptureMaxMs) {
-    const state = await collectMediaState(tabId);
-    if (state?.observedMediaURLs?.length) {
-      rememberMediaUrls(tabId, state.pageURL, state.observedMediaURLs);
-    }
-    sawActivePlayback = sawActivePlayback || Boolean(state?.activePlayback);
-    sawPlayableMedia = sawPlayableMedia || Boolean(state?.hasPlayableMedia);
-
-    const count = observedMediaUrls(tabId).length;
-    if (count !== lastCount) {
-      lastCount = count;
-      lastChangeAt = Date.now();
-    }
-
-    const manifestEnded = await hasEndedManifest(observedMediaUrls(tabId));
-    const idleFor = Date.now() - lastChangeAt;
-    const elapsed = Math.round((Date.now() - startedAt) / 1000);
-    const activeLabel = state?.activePlayback ? "playing" : state?.hasPlayableMedia ? "idle/paused" : "scanning";
-    progress(requestId, 25, `Collecting chunks: ${count} detected (${activeLabel}, ${elapsed}s).`);
-
-    if (manifestEnded && count > 0) {
-      progress(requestId, 29, `Stream end marker found. ${count} chunks detected.`);
-      break;
-    }
-    if (state?.allEnded && count > 0) {
-      progress(requestId, 29, `Playback ended. ${count} chunks detected.`);
-      break;
-    }
-    if (!state?.activePlayback && count > 0 && sawActivePlayback && idleFor >= mediaCaptureIdleMs) {
-      progress(requestId, 29, `Playback stopped and chunk stream is idle. ${count} chunks detected.`);
-      break;
-    }
-    if (!state?.activePlayback && count > 0 && !sawPlayableMedia && idleFor >= mediaCaptureIdleMs) {
-      progress(requestId, 29, `Chunk stream is idle. ${count} chunks detected.`);
-      break;
-    }
-    if (!state?.activePlayback && count > 0 && idleFor >= mediaCapturePausedIdleMs) {
-      progress(requestId, 29, `Media is paused/idle. ${count} chunks detected.`);
-      break;
-    }
-    await sleep(count ? mediaCapturePollMs : mediaSettleMs);
-  }
-}
-
 async function collectMediaState(tabId) {
   try {
     const response = await chrome.tabs.sendMessage(tabId, { type: "collectMediaState" });
     return response?.ok ? response.state : {};
   } catch {
     return {};
-  }
-}
-
-async function hasEndedManifest(urls) {
-  const manifest = urls.find((url) => /\.(m3u8|mpd)(\?|#|$)/i.test(String(url || "")));
-  if (!manifest) return false;
-  try {
-    const response = await fetch(manifest, { credentials: "include", cache: "no-store" });
-    if (!response.ok) return false;
-    const text = await response.text();
-    return /#EXT-X-ENDLIST|<\/MPD>/i.test(text);
-  } catch {
-    return false;
   }
 }
 
@@ -684,10 +636,6 @@ function mediaPriority(url) {
   if (/\.(png|jpe?g|gif|webp)(\?|#|$)/.test(text)) return 50;
   if (/\.svg(\?|#|$)/.test(text)) return 20;
   return 10;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 if (chrome.webRequest?.onCompleted) {

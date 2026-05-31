@@ -40,3 +40,11 @@
 - **Cause:** The sidebar used a fixed position over the page while `main` was centered with a max width and right padding, so the two areas did not reserve separate layout space.
 - **Fix:** Desktop layout now reserves a right rail for the topics sidebar, widens the main content area, moves the sidebar below the header line, and lets header actions wrap when needed.
 - **Verification:** `node --check src/server.mjs` and app relaunch.
+
+## 2026-05-31 - Browser Media Capture Should Not Wait For Playback Chunks
+
+- **Area:** `extension/arc-clipper/background.js`
+- **Symptom:** Media capture needed to save user time by requesting stream chunks directly from source instead of waiting for playback to load chunks.
+- **Cause:** Older playback-wait helper code remained in the extension even after the popup path started using manifest expansion.
+- **Fix:** Removed the playback-completion wait helper from the background script, increased manifest expansion capacity for long streams, and improved DASH `SegmentTemplate` expansion from manifest duration metadata.
+- **Verification:** `node --check extension/arc-clipper/background.js` and `npm test`.

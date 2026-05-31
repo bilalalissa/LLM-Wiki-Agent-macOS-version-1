@@ -30,7 +30,7 @@ After updating this repo, click Reload for the unpacked `LLM Wiki Agent Clipper`
 
 The popup shows a progress bar while media downloads are attempted. Review the title, text length, media count, and per-media download status before clicking `Submit to vault`.
 
-For video pages, start playback long enough for the page to expose its media URLs, then click `Prepare page media`. The extension now requests detected HLS/DASH stream manifests (`.m3u8` and `.mpd`) directly from the source and expands their segment/chunk URLs immediately instead of waiting for playback to finish. If a site does not expose a readable manifest, the extension falls back to observed media requests and URL-only traceability. Stream chunks are reviewed as one video/audio package and are saved as a hidden package so the wiki, sidebar, and Files tab do not fill with individual chunk files.
+For video pages, start playback only long enough for the page to expose its media manifest URL, then click `Prepare page media`. The extension requests detected HLS/DASH stream manifests (`.m3u8` and `.mpd`) directly from the source and expands the manifest-listed segment/chunk URLs immediately. It does not wait for playback to finish and it does not poll until chunks finish loading. If a site does not expose a readable manifest, hidden chunks cannot be requested directly; the extension keeps any already-visible media URLs for traceability. Stream chunks are reviewed as one video/audio package and are saved as a hidden package so the wiki, sidebar, and Files tab do not fill with individual chunk files.
 
 The extension writes a markdown source into:
 
@@ -44,4 +44,4 @@ When browser permissions allow it, media binaries are downloaded and saved into:
 raw/assets/browser-clips/
 ```
 
-The extension detects media from page elements, resource timing entries, browser requests, and readable stream manifests. It first tries to send actual bytes from the browser, including same-session media and manifest-expanded stream chunks where possible. If that fails, the local agent tries to download public media URLs. If neither route can access the media file, the markdown source keeps the original media URL for traceability.
+The extension detects media from page elements, resource timing entries, browser requests, and readable stream manifests. It first expands readable manifests directly, then tries to send actual bytes from the browser, including same-session media and manifest-expanded stream chunks where possible. If that fails, the local agent tries to download public media URLs. If neither route can access the media file, the markdown source keeps the original media URL for traceability.
