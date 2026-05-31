@@ -140,10 +140,22 @@ function renderPreview(result) {
   previewTagsInput.value = Array.isArray(result.tags) ? result.tags.join(", ") : "";
   document.querySelector("#preview-text").textContent = `${result.textLength || 0} characters`;
   const summary = result.summary || {};
-  document.querySelector("#preview-media-summary").textContent =
-    `${summary.downloaded || 0}/${summary.total || 0} downloaded, ${summary.urlOnly || 0} URL-only`;
+  document.querySelector("#preview-media-summary").textContent = result.singleVideoRequest
+    ? `Single ${result.singleVideoRequest.provider || "page"} video requested; chunks excluded`
+    : `${summary.downloaded || 0}/${summary.total || 0} downloaded, ${summary.urlOnly || 0} URL-only`;
   mediaList.innerHTML = "";
   const mediaItems = Array.isArray(result.media) ? result.media : [];
+  if (result.singleVideoRequest) {
+    const item = document.createElement("li");
+    item.className = "url-only";
+    item.innerHTML = `
+      <strong>Single ${escapeHtml(result.singleVideoRequest.provider || "page")} video file</strong>
+      <span>agent download · transcript requested</span>
+      <small>${escapeHtml(result.singleVideoRequest.url || "")}</small>
+      <em>Detected chunks, storyboard images, thumbnails, and sub-videos are not submitted.</em>
+    `;
+    mediaList.append(item);
+  }
   const streamItems = mediaItems.filter(isStreamChunkMedia);
   const visibleItems = mediaItems.filter((media) => !isStreamChunkMedia(media));
   if (streamItems.length >= 3) {
@@ -259,6 +271,8 @@ function mediaLabel(media) {
 function isStreamChunkMedia(media) {
   const value = `${media?.url || media?.src || ""} ${media?.filename || ""} ${media?.alt || ""}`.toLowerCase();
   return /\.(m4s|mpd|m3u8)(\?|#|\s|$)/.test(value) ||
+    /(^|\/\/|\.)(googlevideo\.com|youtube\.com)\//.test(value) && /videoplayback|\/api\/manifest|\/ptracking/.test(value) ||
+    /i\.ytimg\.com\/sb\/|\/storyboard/.test(value) ||
     /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(value) ||
     /(^|\b)(init|seg[_-]?\d+|chunk[_-]?\d+)[^/\s]*\.mp4(\?|#|\s|$)/.test(value) ||
     /cloudflarestream\.com/.test(value) && /(manifest|playlist|chunk|segment|seg_|\.m4s|\.mpd|\.m3u8|\/video\/|\/audio\/)/.test(value);

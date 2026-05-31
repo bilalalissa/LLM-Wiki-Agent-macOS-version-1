@@ -141,3 +141,42 @@ test("browser stream summary handles more than 400 manifest chunks without asset
   assert.match(markdown, /Stream references received: 425/);
   assert.doesNotMatch(markdown, /stream-manifest\.json/);
 });
+
+test("youtube media clips request one page video and do not save chunks or storyboard images", async () => {
+  const previous = process.env.LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD;
+  process.env.LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD = "1";
+  try {
+    const { root, vault } = makeVaultRoot();
+    const dataUrl = `data:video/mp4;base64,${Buffer.from("chunk").toString("base64")}`;
+
+    const result = await saveBrowserClip(makeConfig(root), {
+      vault: "Research-vault",
+      captureType: "media",
+      title: "YouTube clip",
+      url: "https://www.youtube.com/watch?v=oIfT_3dURRg",
+      text: "YouTube clip.",
+      singleVideoRequest: {
+        provider: "youtube",
+        url: "https://www.youtube.com/watch?v=oIfT_3dURRg"
+      },
+      media: [
+        { url: "https://rr1---sn.test.googlevideo.com/videoplayback?range=0-999", filename: "videoplayback.bin", dataUrl },
+        { url: "https://rr1---sn.test.googlevideo.com/videoplayback?range=1000-1999", filename: "videoplayback.bin", dataUrl },
+        { url: "https://i.ytimg.com/sb/oIfT_3dURRg/storyboard3_L0/M0.jpg", filename: "M0.jpg" }
+      ]
+    });
+
+    assert.equal(result.assets.length, 0);
+    const markdown = fs.readFileSync(path.join(vault, result.file), "utf8");
+    assert.match(markdown, /Single YouTube video file/);
+    assert.match(markdown, /External video download is disabled/);
+    assert.doesNotMatch(markdown, /videoplayback\.bin/);
+    assert.doesNotMatch(markdown, /M0\.jpg/);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD;
+    } else {
+      process.env.LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD = previous;
+    }
+  }
+});

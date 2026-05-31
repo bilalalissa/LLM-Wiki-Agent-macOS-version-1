@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { ensureDir, listVaults, slugify, vaultName } from "./vaults.mjs";
 
 const maxTextChars = 240000;
 const maxHtmlChars = 120000;
 const maxAssetBytes = 60 * 1024 * 1024;
+const maxTranscriptChars = 180000;
 
 export async function saveBrowserClip(config, payload) {
   const vaultPath = resolveVault(config, payload?.vault);
@@ -19,7 +21,11 @@ export async function saveBrowserClip(config, payload) {
     "input",
     `${stamp}--browser--${captureType}--${slugify(title)}.md`
   ));
-  const savedMedia = await saveClipMedia(vaultPath, payload?.media, stamp);
+  const savedMedia = await saveClipMedia(vaultPath, payload?.media, stamp, {
+    payload: payload || {},
+    captureType,
+    title
+  });
   ensureDir(path.dirname(file));
   fs.writeFileSync(file, renderClipMarkdown({
     payload: payload || {},
@@ -32,7 +38,7 @@ export async function saveBrowserClip(config, payload) {
   return {
     vault: vaultName(vaultPath),
     file: relativeVaultPath(vaultPath, file),
-    assets: savedMedia.filter((item) => item.path).map((item) => item.path)
+    assets: savedMedia.flatMap((item) => [item.path, item.transcriptPath].filter(Boolean))
   };
 }
 
@@ -83,7 +89,13 @@ function renderClipMarkdown({ payload, captureType, title, tags, now, savedMedia
   if (savedMedia.length) {
     lines.push("## Media", "");
     for (const media of savedMedia) {
-      if (media.kind === "stream-reference") {
+      if (media.kind === "video-download") {
+        lines.push(`- ${media.label}`);
+        lines.push(`  - Download status: ${media.status || "unknown"}`);
+        if (media.path) lines.push(`![[${media.path}]]`);
+        if (media.transcriptPath) lines.push(`  - Transcript file: [[${media.transcriptPath}]]`);
+        if (media.error) lines.push(`  - Error: ${media.error}`);
+      } else if (media.kind === "stream-reference") {
         lines.push(`- ${media.label}`);
         lines.push(`  - Stream references received: ${media.count}`);
         lines.push("  - Stream chunks were not saved to vault assets.");
@@ -97,6 +109,18 @@ function renderClipMarkdown({ payload, captureType, title, tags, now, savedMedia
         lines.push(`  - Original URL: ${media.sourceUrl}`);
       }
     }
+    lines.push("");
+  }
+
+  const transcriptText = savedMedia
+    .filter((media) => media.kind === "video-download" && media.transcriptText)
+    .map((media) => media.transcriptText)
+    .join("\n\n")
+    .trim();
+  if (transcriptText) {
+    lines.push("## Transcript");
+    lines.push("");
+    lines.push(transcriptText);
     lines.push("");
   }
 
@@ -117,7 +141,11 @@ function renderClipMarkdown({ payload, captureType, title, tags, now, savedMedia
   return `${lines.join("\n")}\n`;
 }
 
-async function saveClipMedia(vaultPath, mediaList, stamp) {
+async function saveClipMedia(vaultPath, mediaList, stamp, options = {}) {
+  const pageVideo = pageVideoRequest(options.payload, options.captureType);
+  if (pageVideo) {
+    return [await saveSinglePageVideo(vaultPath, pageVideo, stamp, options.title)];
+  }
   const items = Array.isArray(mediaList) ? mediaList : [];
   const streamItems = items.filter(isStreamChunkMedia);
   const regularItems = items.filter((item) => !isStreamChunkMedia(item));
@@ -155,6 +183,163 @@ async function saveClipMedia(vaultPath, mediaList, stamp) {
     if (sourceUrl) saved.push({ label, url: sourceUrl, sourceUrl });
   }
   return saved;
+}
+
+function pageVideoRequest(payload, captureType) {
+  if (captureType !== "media") return null;
+  const explicit = payload?.singleVideoRequest || payload?.mediaDownload || {};
+  const url = cleanText(explicit.url || payload?.url || "", 2000);
+  if (!isYouTubePageUrl(url)) return null;
+  return {
+    provider: "youtube",
+    url
+  };
+}
+
+async function saveSinglePageVideo(vaultPath, request, stamp, title) {
+  const label = "Single YouTube video file";
+  const dir = path.join(vaultPath, "raw", "assets", "browser-clips");
+  const prefix = `${stamp}--single-video--${slugify(title || "youtube-video")}`;
+  const sourceUrl = request.url;
+  ensureDir(dir);
+
+  if (process.env.LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD === "1") {
+    return {
+      label,
+      kind: "video-download",
+      status: "skipped",
+      sourceUrl,
+      error: "External video download is disabled by LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1."
+    };
+  }
+
+  const ytDlp = ytDlpInvocation();
+  const outputTemplate = path.join(dir, `${prefix}.%(ext)s`);
+  try {
+    await runCommand(ytDlp.command, [
+      ...ytDlp.argsPrefix,
+      "--no-playlist",
+      "--no-part",
+      "--write-auto-subs",
+      "--write-subs",
+      "--sub-langs",
+      "en.*,en,ar.*,ar",
+      "--convert-subs",
+      "srt",
+      "-f",
+      "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b[ext=mp4]/b",
+      "--merge-output-format",
+      "mp4",
+      "-o",
+      outputTemplate,
+      sourceUrl
+    ], { timeoutMs: 15 * 60 * 1000 });
+  } catch (error) {
+    return {
+      label,
+      kind: "video-download",
+      status: "failed",
+      sourceUrl,
+      error: cleanText(error.message, 500)
+    };
+  }
+
+  const files = fs.readdirSync(dir)
+    .filter((file) => file.startsWith(prefix) && !file.endsWith(".part") && !file.endsWith(".ytdl"))
+    .map((file) => path.join(dir, file));
+  const videoFile = files.find((file) => /\.(mp4|m4v|mov|webm|mkv)$/i.test(file));
+  const transcriptFile = files.find((file) => /\.(srt|vtt)$/i.test(file));
+  if (!videoFile) {
+    return {
+      label,
+      kind: "video-download",
+      status: "failed",
+      sourceUrl,
+      transcriptPath: transcriptFile ? relativeVaultPath(vaultPath, transcriptFile) : "",
+      transcriptText: transcriptFile ? readTranscriptText(transcriptFile) : "",
+      error: "yt-dlp completed but no merged video file was produced."
+    };
+  }
+  return {
+    label,
+    kind: "video-download",
+    status: "downloaded",
+    path: relativeVaultPath(vaultPath, videoFile),
+    transcriptPath: transcriptFile ? relativeVaultPath(vaultPath, transcriptFile) : "",
+    transcriptText: transcriptFile ? readTranscriptText(transcriptFile) : "",
+    sourceUrl
+  };
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`${command} timed out while downloading the single page video.`));
+    }, options.timeoutMs || 0x7fffffff);
+    child.stdout.on("data", (chunk) => {
+      output = `${output}${chunk}`.slice(-4000);
+    });
+    child.stderr.on("data", (chunk) => {
+      output = `${output}${chunk}`.slice(-4000);
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      if (error.code === "ENOENT") {
+        reject(new Error("yt-dlp is not installed or not on PATH. Install it with `brew install yt-dlp` or set YT_DLP_PATH."));
+        return;
+      }
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve(output);
+      } else {
+        reject(new Error(`yt-dlp failed with exit code ${code}. ${output.trim()}`.trim()));
+      }
+    });
+  });
+}
+
+function ytDlpInvocation() {
+  if (process.env.YT_DLP_PATH) return { command: process.env.YT_DLP_PATH, argsPrefix: [] };
+  const home = process.env.HOME || "";
+  const candidates = [
+    "/opt/homebrew/bin/yt-dlp",
+    "/usr/local/bin/yt-dlp",
+    path.join(home, ".local", "bin", "yt-dlp"),
+    path.join(home, "Library", "Python", "3.13", "bin", "yt-dlp"),
+    path.join(home, "Library", "Python", "3.12", "bin", "yt-dlp"),
+    path.join(home, "Library", "Python", "3.11", "bin", "yt-dlp"),
+    path.join(home, "Library", "Python", "3.10", "bin", "yt-dlp")
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return { command: candidate, argsPrefix: [] };
+  }
+  return { command: "yt-dlp", argsPrefix: [] };
+}
+
+function readTranscriptText(file) {
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    const text = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line &&
+        line !== "WEBVTT" &&
+        !/^\d+$/.test(line) &&
+        !/^\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s+-->\s+\d{1,2}:\d{2}:\d{2}[,.]\d{3}/.test(line))
+      .join("\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return cleanText(text, maxTranscriptChars);
+  } catch {
+    return "";
+  }
 }
 
 async function downloadUrlAsset(vaultPath, sourceUrl, stamp, index, label) {
@@ -213,9 +398,22 @@ function saveDataUrlAssetInDir(dir, vaultPath, dataUrl, stamp, index, label, sou
 function isStreamChunkMedia(media) {
   const value = `${media?.url || media?.src || ""} ${media?.filename || ""} ${media?.alt || ""}`.toLowerCase();
   return /\.(m4s|mpd|m3u8|ts|cmfv|cmfa)(\?|#|\s|$)/.test(value) ||
+    /(^|\/\/|\.)(googlevideo\.com|youtube\.com)\//.test(value) && /videoplayback|\/api\/manifest|\/ptracking/.test(value) ||
+    /i\.ytimg\.com\/sb\/|\/storyboard/.test(value) ||
     /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(value) ||
     /(^|\b)(init|seg[_-]?\d+|chunk[_-]?\d+)[^/\s]*\.(mp4|ts|m4s)(\?|#|\s|$)/.test(value) ||
     /cloudflarestream\.com/.test(value) && /(manifest|playlist|chunk|segment|seg_|\.m4s|\.mpd|\.m3u8|\.ts|\/video\/|\/audio\/)/.test(value);
+}
+
+function isYouTubePageUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return host === "youtube.com" && (url.pathname === "/watch" || url.pathname.startsWith("/shorts/")) ||
+      host === "youtu.be";
+  } catch {
+    return false;
+  }
 }
 
 function extensionForMime(mime) {

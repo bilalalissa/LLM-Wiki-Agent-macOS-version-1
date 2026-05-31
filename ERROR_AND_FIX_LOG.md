@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-05-31 - YouTube Clip Saved Chunks Instead Of One Video
+
+- **Area:** `extension/arc-clipper`, `src/clip.mjs`
+- **Symptom:** A clipped YouTube page saved many `videoplayback` chunk files and storyboard images into the vault, then treated that partial set as the media clip.
+- **Cause:** YouTube `googlevideo.com/videoplayback` URLs do not always expose normal stream file extensions, so the chunk filters classified them as downloadable media instead of stream parts.
+- **Fix:** YouTube watch/Shorts page media clips now submit one page-video request. The extension excludes `videoplayback` chunks, storyboard images, thumbnails, and sub-videos, and the agent uses `yt-dlp` when available to save one merged video plus available Arabic/English subtitle transcript text.
+- **Verification:** `node --check extension/arc-clipper/background.js`, `node --check extension/arc-clipper/popup.js`, `node --check src/clip.mjs`, and `npm test`.
+
 ## 2026-05-31 - Extension Popup Closed During Long Clip Work
 
 - **Area:** `extension/arc-clipper`

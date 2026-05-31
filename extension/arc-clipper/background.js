@@ -222,6 +222,26 @@ async function enrichMedia(payload, tabId, requestId = "") {
   }
   const preparedItems = uniqueMediaItems(items).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
   const streamReport = await inspectStreamManifests(preparedItems, requestId);
+  const pageVideo = pageVideoRequest(payload);
+  if (pageVideo) {
+    if (requestId) progress(requestId, 90, "Prepared one page-video request; chunk assets are excluded.");
+    return {
+      ...payload,
+      media: [],
+      singleVideoRequest: pageVideo,
+      text: [
+        payload.text || `Media exported from ${payload.url || "this page"}`,
+        "",
+        "Single video capture:",
+        `- Provider: ${pageVideo.provider}`,
+        `- Source URL: ${pageVideo.url}`,
+        "- The extension did not upload detected chunks, storyboard images, thumbnails, or sub-videos.",
+        "- The local agent will download one merged video file and subtitle transcript when yt-dlp is available.",
+        "",
+        streamReportText(streamReport)
+      ].filter(Boolean).join("\n")
+    };
+  }
   const mediaItems = uniqueMediaItems(preparedItems.filter((item) => !isStreamReferenceItem(item)))
     .sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
   const downloadedMedia = await downloadMediaItems(mediaItems, requestId);
@@ -641,6 +661,7 @@ function summarizePreparedClip(payload) {
       delete next.dataUrl;
       return next;
     }),
+    singleVideoRequest: payload?.singleVideoRequest || null,
     summary
   };
 }
@@ -785,6 +806,8 @@ function isStreamReferenceItem(item) {
 function isLikelyStreamingSegmentUrl(url) {
   const normalized = String(url || "").toLowerCase();
   return /\.(m4s|ts|cmfv|cmfa)(\?|#|$)/.test(normalized) ||
+    /(^|\/\/|\.)(googlevideo\.com|youtube\.com)\//.test(normalized) && /videoplayback|\/api\/manifest|\/ptracking/.test(normalized) ||
+    /i\.ytimg\.com\/sb\/|\/storyboard/.test(normalized) ||
     /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(normalized) ||
     /\/seg[_-]?\d+/.test(normalized) ||
     /(^|\b)(init|seg[_-]?\d+|chunk[_-]?\d+)[^/\s]*\.(mp4|ts|m4s)(\?|#|\s|$)/.test(normalized) ||
@@ -799,8 +822,30 @@ function isLikelyStreamingMediaUrl(url) {
     /\.(m4s|m3u8|mpd|webm|aac|ts|cmfv|cmfa)(\?|#|$)/.test(normalized) ||
     /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(normalized) ||
     /\/seg[_-]?\d+/.test(normalized) ||
+    /i\.ytimg\.com\/sb\/|\/storyboard/.test(normalized) ||
     (normalized.includes("cloudflarestream.com") && /(manifest|playlist|chunk|segment|\.m3u8|\.mpd|\.m4s|\/video|\/audio)/.test(normalized)) ||
     normalized.includes("videoplayback");
+}
+
+function pageVideoRequest(payload) {
+  if (payload?.captureType !== "media") return null;
+  const pageUrl = String(payload?.url || "");
+  if (!isYouTubePageUrl(pageUrl)) return null;
+  return {
+    provider: "youtube",
+    url: pageUrl
+  };
+}
+
+function isYouTubePageUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    return host === "youtube.com" && (url.pathname === "/watch" || url.pathname.startsWith("/shorts/")) ||
+      host === "youtu.be";
+  } catch {
+    return false;
+  }
 }
 
 function mediaKind(url) {

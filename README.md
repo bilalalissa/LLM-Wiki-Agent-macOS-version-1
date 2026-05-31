@@ -259,6 +259,7 @@ Supported clip types:
 - current whole page text and captured HTML
 - page media references
 - downloaded page media when browser or server access permits it
+- single YouTube page-video downloads with subtitle transcript extraction when `yt-dlp` is installed
 - right-clicked image, audio, video, media link, or normal link
 
 Install in Arc:
@@ -271,6 +272,14 @@ Install in Arc:
 6. Click the extension icon, confirm the Agent URL, and choose a vault.
 
 After updating files in this repo, open `arc://extensions` and click Reload on the unpacked `LLM Wiki Agent Clipper` extension so Arc uses the latest background script.
+
+For YouTube page media clips, install `yt-dlp` on the Mac that runs the agent:
+
+```bash
+brew install yt-dlp
+```
+
+If `yt-dlp` is installed somewhere outside `PATH`, launch the app with `YT_DLP_PATH=/path/to/yt-dlp`. The agent uses it to download one merged video file and available Arabic/English subtitles. Disable external video downloading with `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1`.
 
 Default Agent URL:
 
@@ -295,6 +304,8 @@ The extension watches visible media elements, resource timing entries, browser m
 The extension popup prepares clips before submission. It shows a progress bar, detected media details, how many media items were downloaded, and which items are URL-only. Arc/Chromium popups close automatically when focus moves away; if that happens, the extension keeps the clip state in the background and shows a toolbar badge while work continues. Reopen the extension icon to restore the progress, ready review screen, or saved/error result. Before submitting, review the title and enter optional comma-separated tags such as `meeting, research, ai/agents`. The app writes those tags into the saved Markdown frontmatter and source summary. Click `Submit to vault` only after reviewing the prepared clip.
 
 For video pages, start playback only long enough for the page to expose its media manifest URL, then click `Prepare page media`. The extension inspects detected HLS/DASH manifests (`.m3u8` and `.mpd`) directly from the source, counts listed segment/chunk URLs, and sends one clipped content item to the agent. It does not wait for playback to finish, does not poll until chunks finish loading, and does not upload chunk files. If a site does not expose a readable manifest, hidden chunks cannot be requested directly; the generated source keeps any already-visible media URLs for traceability.
+
+For YouTube watch and Shorts pages, `Prepare page media` is stricter: the extension sends no detected `videoplayback` chunks, storyboard images, thumbnails, or sub-videos. It sends one page-video request to the local agent. The agent then saves one merged video under `raw/assets/browser-clips/` and writes available subtitle text into the generated raw source so the wiki can ingest and reason over the clip. Use this only for videos you have the right to archive.
 
 [Back to top](#top)
 
