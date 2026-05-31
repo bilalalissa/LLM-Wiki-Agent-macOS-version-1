@@ -1,6 +1,8 @@
 const defaultServerUrl = "http://127.0.0.1:8789";
 const maxInlineTransferChars = 180 * 1024 * 1024;
 const maxBrowserMediaBytes = 50 * 1024 * 1024;
+const maxManifestExpansionItems = 400;
+const maxManifestDepth = 3;
 const mediaSettleMs = 1800;
 const mediaCapturePollMs = 1000;
 const mediaCaptureIdleMs = 7000;
@@ -96,7 +98,7 @@ async function preparePopupClip(captureType, requestId) {
   if (!response?.ok) throw new Error(response?.error || "Could not collect browser content.");
   progress(requestId, 25, "Detecting media URLs...");
   if (captureType === "media") {
-    await waitForMediaCaptureCompletion(tab.id, requestId);
+    await collectMediaState(tab.id);
   }
   const payload = await enrichMedia(response.payload, tab.id, requestId);
   preparedClip = payload;
@@ -155,9 +157,11 @@ async function enrichMedia(payload, tabId, requestId = "") {
     }
   }
   const preparedItems = uniqueMediaItems(items).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
+  const expandedItems = await expandStreamManifests(preparedItems, requestId);
+  const mediaItems = uniqueMediaItems(expandedItems).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
   const media = [];
   let inlineChars = 0;
-  for (const [index, item] of preparedItems.entries()) {
+  for (const [index, item] of mediaItems.entries()) {
     let next;
     if (item?.dataUrl) {
       next = {
@@ -167,7 +171,7 @@ async function enrichMedia(payload, tabId, requestId = "") {
         downloadMethod: "page-data"
       };
     } else {
-      next = await mediaPayload(item.url || item.src, item.alt || item.title || "");
+      next = await mediaPayload(item.url || item.src, item.alt || item.title || "", item);
     }
     if (next?.dataUrl) {
       const nextSize = next.dataUrl.length;
@@ -180,10 +184,10 @@ async function enrichMedia(payload, tabId, requestId = "") {
     }
     media.push(next);
     if (requestId) {
-      const percent = preparedItems.length
-        ? 30 + Math.round(((index + 1) / preparedItems.length) * 60)
+      const percent = mediaItems.length
+        ? 30 + Math.round(((index + 1) / mediaItems.length) * 60)
         : 90;
-      progress(requestId, percent, `Checked media ${index + 1} of ${preparedItems.length}.`);
+      progress(requestId, percent, `Checked media ${index + 1} of ${mediaItems.length}.`);
     }
   }
   const summary = mediaSummary(media);
@@ -200,12 +204,14 @@ async function enrichMedia(payload, tabId, requestId = "") {
   return { ...payload, text, media };
 }
 
-async function mediaPayload(url, alt) {
+async function mediaPayload(url, alt, source = {}) {
   const base = {
     url,
     alt,
     type: mediaKind(url),
-    filename: filenameFromUrl(url)
+    filename: filenameFromUrl(url),
+    streamManifestUrl: source.streamManifestUrl || "",
+    streamGroup: source.streamGroup || ""
   };
   try {
     if (!url) return { ...base, downloadStatus: "missing-url", downloadError: "No media URL was available." };
@@ -236,10 +242,207 @@ async function mediaPayload(url, alt) {
       dataUrl: await blobToDataUrl(blob),
       downloadStatus: "downloaded",
       downloadBytes: blob.size,
-      downloadMethod: "browser-fetch"
+      downloadMethod: source.downloadMethod || "browser-fetch"
     };
   } catch (error) {
     return { ...base, downloadStatus: "url-only", downloadError: `${error.name || "Error"}: ${error.message || "Browser fetch failed"}` };
+  }
+}
+
+async function expandStreamManifests(items, requestId = "") {
+  const result = [...items];
+  const manifests = items
+    .map((item) => item?.url || item?.src || "")
+    .filter((url) => isStreamManifestUrl(url));
+  if (!manifests.length) return result;
+
+  const seen = new Set(result.map((item) => item?.url || item?.src || "").filter(Boolean));
+  for (const [index, manifestUrl] of manifests.entries()) {
+    if (requestId) {
+      progress(requestId, 26, `Requesting stream manifest ${index + 1} of ${manifests.length} directly from source...`);
+    }
+    const expanded = await expandManifestUrl(manifestUrl, {
+      depth: 0,
+      visited: new Set(),
+      remaining: maxManifestExpansionItems - result.length
+    });
+    for (const mediaUrl of expanded) {
+      if (!mediaUrl || seen.has(mediaUrl)) continue;
+      seen.add(mediaUrl);
+      result.push({
+        url: mediaUrl,
+        alt: "Stream part from manifest",
+        type: mediaKind(mediaUrl),
+        streamManifestUrl: manifestUrl,
+        streamGroup: filenameFromUrl(manifestUrl) || "manifest",
+        downloadMethod: "manifest-direct"
+      });
+      if (result.length >= maxManifestExpansionItems) break;
+    }
+    if (result.length >= maxManifestExpansionItems) break;
+  }
+  if (requestId) {
+    const added = result.length - items.length;
+    progress(requestId, 29, added ? `Requested ${added} stream parts directly from manifests.` : "No stream parts were exposed by detected manifests.");
+  }
+  return result;
+}
+
+async function expandManifestUrl(manifestUrl, state) {
+  if (!manifestUrl || state.depth > maxManifestDepth || state.remaining <= 0 || state.visited.has(manifestUrl)) return [];
+  state.visited.add(manifestUrl);
+  try {
+    const response = await fetch(manifestUrl, {
+      credentials: "include",
+      cache: "no-store",
+      redirect: "follow",
+      referrerPolicy: "no-referrer-when-downgrade"
+    });
+    if (!response.ok) return [];
+    const text = await response.text();
+    if (/^\s*#EXTM3U/im.test(text) || /\.m3u8(\?|#|$)/i.test(manifestUrl)) {
+      return expandHlsManifest(text, manifestUrl, state);
+    }
+    if (/<MPD[\s>]/i.test(text) || /\.mpd(\?|#|$)/i.test(manifestUrl)) {
+      return expandDashManifest(text, manifestUrl, state);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+async function expandHlsManifest(text, manifestUrl, state) {
+  const found = [];
+  const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let index = 0; index < lines.length && found.length < state.remaining; index += 1) {
+    const line = lines[index];
+    if (line.startsWith("#EXT-X-MAP")) {
+      const uri = attrValue(line, "URI");
+      if (uri) found.push(absoluteUrlFrom(uri, manifestUrl));
+      continue;
+    }
+    if (line.startsWith("#EXT-X-MEDIA")) {
+      const uri = attrValue(line, "URI");
+      if (uri) {
+        const mediaPlaylist = absoluteUrlFrom(uri, manifestUrl);
+        if (isStreamManifestUrl(mediaPlaylist)) {
+          found.push(...await expandManifestUrl(mediaPlaylist, { ...state, depth: state.depth + 1, remaining: state.remaining - found.length }));
+        }
+      }
+      continue;
+    }
+    if (line.startsWith("#")) continue;
+    const url = absoluteUrlFrom(line, manifestUrl);
+    if (!url) continue;
+    if (isStreamManifestUrl(url)) {
+      found.push(...await expandManifestUrl(url, { ...state, depth: state.depth + 1, remaining: state.remaining - found.length }));
+    } else if (isLikelyStreamingMediaUrl(url)) {
+      found.push(url);
+    }
+  }
+  return found.slice(0, state.remaining);
+}
+
+async function expandDashManifest(text, manifestUrl, state) {
+  const found = [];
+  const xml = String(text || "");
+  for (const url of explicitDashUrls(xml, manifestUrl)) {
+    if (found.length >= state.remaining) break;
+    found.push(url);
+  }
+  if (found.length < state.remaining) {
+    found.push(...expandDashSegmentTemplates(xml, manifestUrl, state.remaining - found.length));
+  }
+  return found.slice(0, state.remaining);
+}
+
+function explicitDashUrls(xml, manifestUrl) {
+  const urls = [];
+  const patterns = [
+    /<BaseURL[^>]*>([^<]+)<\/BaseURL>/gi,
+    /<SegmentURL[^>]*\smedia=["']([^"']+)["'][^>]*>/gi,
+    /<Initialization[^>]*\ssourceURL=["']([^"']+)["'][^>]*>/gi,
+    /["']([^"']+\.(?:m4s|mp4|webm|aac)(?:\?[^"']*)?)["']/gi
+  ];
+  for (const pattern of patterns) {
+    for (const match of xml.matchAll(pattern)) {
+      const url = absoluteUrlFrom(decodeXml(match[1]), manifestUrl);
+      if (url && isLikelyStreamingMediaUrl(url)) urls.push(url);
+    }
+  }
+  return [...new Set(urls)];
+}
+
+function expandDashSegmentTemplates(xml, manifestUrl, limit) {
+  const urls = [];
+  const representationIds = [...xml.matchAll(/<Representation\b[^>]*\sid=["']([^"']+)["'][^>]*>/gi)]
+    .map((match) => decodeXml(match[1]))
+    .filter(Boolean);
+  const ids = representationIds.length ? representationIds.slice(0, 8) : [""];
+  for (const match of xml.matchAll(/<SegmentTemplate\b([^>]*)>/gi)) {
+    const attrs = match[1] || "";
+    const media = attrValue(attrs, "media");
+    const init = attrValue(attrs, "initialization");
+    if (!media && !init) continue;
+    const start = Number(attrValue(attrs, "startNumber") || 1) || 1;
+    const count = dashSegmentCount(xml, match.index);
+    for (const representationId of ids) {
+      if (init && urls.length < limit) {
+        urls.push(resolveDashTemplate(init, manifestUrl, representationId, start));
+      }
+      for (let number = start; number < start + count && urls.length < limit; number += 1) {
+        urls.push(resolveDashTemplate(media, manifestUrl, representationId, number));
+      }
+      if (urls.length >= limit) break;
+    }
+    if (urls.length >= limit) break;
+  }
+  return [...new Set(urls.filter((url) => url && isLikelyStreamingMediaUrl(url)))].slice(0, limit);
+}
+
+function dashSegmentCount(xml, index = 0) {
+  const tail = xml.slice(index, index + 20000);
+  const timeline = tail.match(/<SegmentTimeline\b[\s\S]*?<\/SegmentTimeline>/i)?.[0] || "";
+  if (!timeline) return 120;
+  let total = 0;
+  for (const match of timeline.matchAll(/<S\b([^>]*)\/?>/gi)) {
+    const repeat = Number(attrValue(match[1] || "", "r") || 0);
+    total += Math.max(1, repeat + 1);
+    if (total >= maxManifestExpansionItems) break;
+  }
+  return Math.min(Math.max(total, 1), maxManifestExpansionItems);
+}
+
+function resolveDashTemplate(template, manifestUrl, representationId, number) {
+  if (!template) return "";
+  const value = template
+    .replace(/\$RepresentationID\$/g, representationId || "")
+    .replace(/\$Number(?:%0\d+d)?\$/g, String(number))
+    .replace(/\$Time(?:%0\d+d)?\$/g, String(number));
+  return absoluteUrlFrom(value, manifestUrl);
+}
+
+function attrValue(text, name) {
+  const pattern = new RegExp(`${name}=["']([^"']+)["']`, "i");
+  return decodeXml(String(text || "").match(pattern)?.[1] || "");
+}
+
+function decodeXml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function absoluteUrlFrom(value, base) {
+  if (!value || typeof value !== "string") return "";
+  try {
+    return new URL(value, base).href;
+  } catch {
+    return "";
   }
 }
 
@@ -445,6 +648,10 @@ function filenameFromUrl(value) {
 
 function looksLikeMedia(url) {
   return /\.(png|jpe?g|gif|webp|svg|pdf|mp3|wav|m4a|aiff|mp4|mov|m4v|m4s|m3u8|mpd|webm|aac)(\?|#|$)/i.test(String(url || ""));
+}
+
+function isStreamManifestUrl(url) {
+  return /\.(m3u8|mpd)(\?|#|$)/i.test(String(url || ""));
 }
 
 function isLikelyStreamingMediaUrl(url) {
