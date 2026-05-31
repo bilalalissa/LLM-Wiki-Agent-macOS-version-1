@@ -13,7 +13,7 @@ import { saveBrowserClip } from "./clip.mjs";
 import { listArchiveHistory, listFileHistory } from "./history.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
-import { addNote, deleteNote, listNotes, saveNoteMedia, updateNote } from "./notes.mjs";
+import { addNote, deleteNote, listNotesAsync, saveNoteMedia, updateNote } from "./notes.mjs";
 import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
@@ -22,7 +22,7 @@ import { deleteSources } from "./source-delete.mjs";
 import { mergeSources } from "./source-merge.mjs";
 import { renameSource } from "./source-rename.mjs";
 import { topicContent } from "./topic-content.mjs";
-import { listTopics } from "./topics.mjs";
+import { listTopicsAsync } from "./topics.mjs";
 import { listRawCandidates, listVaults, vaultName } from "./vaults.mjs";
 import { bootstrapVault } from "./vault-bootstrap.mjs";
 
@@ -176,7 +176,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/topics") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ topics: listTopics(config) }));
+    response.end(JSON.stringify({ topics: await listTopicsAsync(config) }));
     return;
   }
 
@@ -325,7 +325,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/notes") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ notes: listNotes(config) }));
+    response.end(JSON.stringify({ notes: await listNotesAsync(config) }));
     return;
   }
 

@@ -18,6 +18,24 @@ export function listTopics(config) {
     .sort((a, b) => a.title.localeCompare(b.title));
 }
 
+export async function listTopicsAsync(config) {
+  const topics = new Map();
+  for (const vaultPath of listVaults(config.vaultsRoot)) {
+    const vault = vaultName(vaultPath);
+    const index = readIfExists(path.join(vaultPath, "index.md"));
+    for (const topic of topicsFromIndex(vaultPath, vault, index)) {
+      topics.set(topicKey(topic), topic);
+    }
+    await yieldToEventLoop();
+    for (const topic of await topicsFromWikiFilesAsync(vaultPath, vault)) {
+      if (!topics.has(topicKey(topic))) topics.set(topicKey(topic), topic);
+    }
+    await yieldToEventLoop();
+  }
+  return [...topics.values()]
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
 function topicKey(topic) {
   return `${topic.vault}|${topic.path}`;
 }
@@ -53,6 +71,20 @@ function topicsFromWikiFiles(vaultPath, vault) {
   const files = [];
   walkMarkdown(wikiDir, files);
   return files.map((file) => topicFromWikiFile(vaultPath, vault, file)).filter(Boolean);
+}
+
+async function topicsFromWikiFilesAsync(vaultPath, vault) {
+  const wikiDir = path.join(vaultPath, "wiki");
+  if (!fs.existsSync(wikiDir)) return [];
+  const files = [];
+  walkMarkdown(wikiDir, files);
+  const topics = [];
+  for (const [index, file] of files.entries()) {
+    const topic = topicFromWikiFile(vaultPath, vault, file);
+    if (topic) topics.push(topic);
+    if (index % 20 === 19) await yieldToEventLoop();
+  }
+  return topics;
 }
 
 function walkMarkdown(dir, files) {
@@ -162,4 +194,8 @@ function updatedFromStat(file) {
   } catch {
     return "";
   }
+}
+
+function yieldToEventLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
 }

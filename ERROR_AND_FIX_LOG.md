@@ -70,5 +70,5 @@
 - **Area:** `src/ingest-lib.mjs`
 - **Symptom:** After reinstalling, the server listened on port `8789` but `/api/status` could time out while startup ingest inspected existing media source pages.
 - **Cause:** pending media reprocessing scanned existing wiki source pages as part of normal auto-ingest.
-- **Fix:** normal auto-ingest now processes new raw candidates only; pending media reprocessing is opt-in with `LLM_WIKI_REPROCESS_PENDING_MEDIA=1`, ingest loops yield between files, and expensive sidebar topic and notes scans are lazy instead of startup work.
+- **Fix:** normal auto-ingest now processes new raw candidates only; pending media reprocessing is opt-in with `LLM_WIKI_REPROCESS_PENDING_MEDIA=1`, ingest loops yield between files, expensive sidebar topic and notes scans are lazy instead of startup work, and heavy topics/notes API scans yield between file reads so status and extension requests can interleave.
 - **Verification:** `/api/status` after reinstall.

@@ -18,6 +18,22 @@ export function listNotes(config) {
   return notes.sort((a, b) => b.updated.localeCompare(a.updated));
 }
 
+export async function listNotesAsync(config) {
+  const notes = [];
+  for (const vaultPath of listVaults(config.vaultsRoot)) {
+    const files = listWikiFiles(vaultPath);
+    for (const [index, file] of files.entries()) {
+      const relativePath = path.relative(vaultPath, file);
+      if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
+      const text = fs.readFileSync(file, "utf8");
+      notes.push(...parseNotes(text, vaultName(vaultPath), relativePath));
+      if (index % 20 === 19) await yieldToEventLoop();
+    }
+    await yieldToEventLoop();
+  }
+  return notes.sort((a, b) => b.updated.localeCompare(a.updated));
+}
+
 export function addNote(config, input) {
   const target = resolveTarget(config, input.vault, input.path);
   const id = `note-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -176,6 +192,10 @@ function singleLine(value) {
 function quoteBlock(value) {
   const text = String(value || "").trim();
   return (text || " ").split(/\r?\n/).map((line) => `> ${line}`).join("\n");
+}
+
+function yieldToEventLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function safeFilename(value) {
