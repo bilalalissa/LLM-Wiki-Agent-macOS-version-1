@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-05-31 - App Tabs Empty While Vault Scans Blocked The Server
+
+- **Area:** `src/server.mjs`, `src/tab-data-worker.mjs`
+- **Symptom:** Chat, Local, Files, Archive, Topics, Provider, and Notes could appear empty because the app server stopped answering API requests while a vault scan was reading iCloud-backed files.
+- **Cause:** Heavy tab data requests performed synchronous vault file reads in the main Node process, so one slow iCloud file read blocked all other endpoints, including `/api/status`, `/api/vaults`, and `/api/provider-status`.
+- **Fix:** Files, Archive, Topics, and Notes tab data now refresh through independent worker processes with cached responses and timeouts. The UI retries while each tab cache warms up, and Provider/status requests remain responsive.
+- **Verification:** `node --check src/server.mjs`, `node --check src/tab-data-worker.mjs`, `npm test`, and timed `/api/status`, `/api/vaults`, `/api/files`, `/api/archives`, `/api/topics`, `/api/notes`, `/api/provider-status` checks after reinstall.
+
 ## 2026-05-31 - Arc Extension Media Capture Waited For Playback Completion
 
 - **Area:** `extension/arc-clipper`

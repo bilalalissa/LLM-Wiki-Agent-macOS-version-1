@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { deleteArchivedItems } from "./archive-delete.mjs";
 import { restoreArchivedItems } from "./archive-restore.mjs";
@@ -10,10 +10,9 @@ import { getConfig, setConfigFilePath } from "./config.mjs";
 import { answerQuestion } from "./chat-lib.mjs";
 import { saveChatAsRawSource } from "./chat-source.mjs";
 import { saveBrowserClip } from "./clip.mjs";
-import { listArchiveHistory, listFileHistory } from "./history.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
-import { addNote, deleteNote, listNotesAsync, saveNoteMedia, updateNote } from "./notes.mjs";
+import { addNote, deleteNote, saveNoteMedia, updateNote } from "./notes.mjs";
 import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
@@ -22,7 +21,6 @@ import { deleteSources } from "./source-delete.mjs";
 import { mergeSources } from "./source-merge.mjs";
 import { renameSource } from "./source-rename.mjs";
 import { topicContent } from "./topic-content.mjs";
-import { listTopicsAsync } from "./topics.mjs";
 import { listRawCandidates, listVaults, vaultName } from "./vaults.mjs";
 import { bootstrapVault } from "./vault-bootstrap.mjs";
 
@@ -42,6 +40,13 @@ const generalCompletion = {
   detail: "Plan goals are implemented and verified; full simulator execution is blocked by the local CoreSimulator version mismatch."
 };
 const agentRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const tabDataCache = {
+  files: cacheState(),
+  archives: cacheState(),
+  topics: cacheState(),
+  notes: cacheState()
+};
+const tabDataWorkers = new Map();
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
@@ -90,13 +95,13 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/files") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ files: listFileHistory(config) }));
+    response.end(JSON.stringify(cachedTabPayload("files")));
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/archives") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ archives: listArchiveHistory(config) }));
+    response.end(JSON.stringify(cachedTabPayload("archives")));
     return;
   }
 
@@ -176,7 +181,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/topics") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ topics: await listTopicsAsync(config) }));
+    response.end(JSON.stringify(cachedTabPayload("topics")));
     return;
   }
 
@@ -325,7 +330,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === "GET" && url.pathname === "/api/notes") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ notes: await listNotesAsync(config) }));
+    response.end(JSON.stringify(cachedTabPayload("notes")));
     return;
   }
 
@@ -476,6 +481,7 @@ async function startAutoIngest() {
       console.log(`[backfill] added learning sections to ${backfilled.length} wiki page${backfilled.length === 1 ? "" : "s"}`);
     }
   }
+  refreshTabData("all");
   void runAutoIngest();
   setInterval(runAutoIngest, config.watchIntervalMs);
 }
@@ -483,6 +489,7 @@ async function startAutoIngest() {
 function reloadRuntimeConfig() {
   config = getConfig();
   provider = createProvider(config);
+  invalidateTabData();
   ingestProgress = {
     percent: 100,
     completed: 0,
@@ -491,6 +498,94 @@ function reloadRuntimeConfig() {
     detail: "Config reloaded."
   };
   lastIngestMessage = reportStatus(`Config reloaded from ${config.configFile} at ${formatLocal(new Date())}.`);
+}
+
+function cacheState() {
+  return {
+    items: [],
+    ready: false,
+    loading: false,
+    error: "",
+    updatedAt: ""
+  };
+}
+
+function cachedTabPayload(kind) {
+  const state = tabDataCache[kind] || cacheState();
+  if (!state.ready && !state.loading) refreshTabData(kind);
+  const key = kind === "archives" ? "archives" : kind;
+  return {
+    [key]: state.items,
+    loading: !state.ready || state.loading,
+    error: state.error,
+    updatedAt: state.updatedAt
+  };
+}
+
+function invalidateTabData() {
+  for (const state of Object.values(tabDataCache)) {
+    state.ready = false;
+    state.loading = false;
+    state.error = "";
+  }
+  refreshTabData("all");
+}
+
+function refreshTabData(kind = "all") {
+  if (kind === "all") {
+    for (const item of Object.keys(tabDataCache)) refreshTabData(item);
+    return;
+  }
+  if (!tabDataCache[kind] || tabDataWorkers.has(kind)) return;
+  const kinds = [kind];
+  for (const item of kinds) {
+    tabDataCache[item].loading = true;
+    tabDataCache[item].error = "";
+  }
+  const worker = fork(path.join(agentRoot, "src", "tab-data-worker.mjs"), [kind], {
+    cwd: agentRoot,
+    env: process.env,
+    stdio: ["ignore", "ignore", "ignore", "ipc"]
+  });
+  const timeout = setTimeout(() => {
+    tabDataCache[kind].loading = false;
+    tabDataCache[kind].error = "Tab data scan is taking too long. Try again after iCloud finishes syncing this vault.";
+    worker.kill("SIGTERM");
+  }, 25000);
+  tabDataWorkers.set(kind, worker);
+  worker.on("message", (message) => {
+    if (!message?.ok) {
+      for (const item of kinds) tabDataCache[item].error = message?.error || "Tab data refresh failed.";
+      return;
+    }
+    const result = message.result || {};
+    for (const item of Object.keys(tabDataCache)) {
+      if (!Array.isArray(result[item])) continue;
+      tabDataCache[item] = {
+        items: result[item],
+        ready: true,
+        loading: false,
+        error: "",
+        updatedAt: new Date().toISOString()
+      };
+    }
+  });
+  worker.on("exit", (code) => {
+    clearTimeout(timeout);
+    tabDataWorkers.delete(kind);
+    for (const item of kinds) {
+      tabDataCache[item].loading = false;
+      if (code && !tabDataCache[item].error) tabDataCache[item].error = `Tab data refresh exited with code ${code}.`;
+    }
+  });
+  worker.on("error", (error) => {
+    clearTimeout(timeout);
+    tabDataWorkers.delete(kind);
+    for (const item of kinds) {
+      tabDataCache[item].loading = false;
+      tabDataCache[item].error = error.message;
+    }
+  });
 }
 
 function chooseConfigFile() {
@@ -690,6 +785,7 @@ async function runAutoIngest() {
     console.error(`[auto-ingest] ${error.stack || error.message}`);
   } finally {
     ingestRunning = false;
+    refreshTabData("all");
   }
 }
 
@@ -1501,6 +1597,12 @@ function renderHtml() {
       try {
         const response = await fetch("/api/files");
         const data = await response.json();
+        if (data.loading && !(data.files || []).length) {
+          filesBody.innerHTML = '<tr><td colspan="7" class="muted">Loading vault files...</td></tr>';
+          setTimeout(loadFiles, 1200);
+          return;
+        }
+        if (data.error) throw new Error(data.error);
         filesCache = data.files || [];
         populateSelect(filesVaultFilter, filesCache.map((file) => file.vault), "All vaults");
         populateSelect(filesStatusFilter, filesCache.map((file) => file.status), "All statuses");
@@ -1707,6 +1809,12 @@ function renderHtml() {
       try {
         const response = await fetch("/api/archives");
         const data = await response.json();
+        if (data.loading && !(data.archives || []).length) {
+          archivesBody.innerHTML = '<tr><td colspan="7" class="muted">Loading archive history...</td></tr>';
+          setTimeout(loadArchives, 1200);
+          return;
+        }
+        if (data.error) throw new Error(data.error);
         archivesCache = data.archives || [];
         populateSelect(archivesVaultFilter, archivesCache.map((item) => item.vault), "All vaults");
         populateSelect(archivesKindFilter, archivesCache.map((item) => item.kind), "All types");
@@ -1813,6 +1921,12 @@ function renderHtml() {
       try {
         const response = await fetch("/api/topics");
         const data = await response.json();
+        if (data.loading && !(data.topics || []).length) {
+          topicsBody.innerHTML = '<tr><td colspan="7" class="muted">Loading topics...</td></tr>';
+          setTimeout(loadTopics, 1200);
+          return;
+        }
+        if (data.error) throw new Error(data.error);
         topicsCache = (data.topics || []).map((topic, index) => ({ ...topic, number: index + 1, tagsText: (topic.tags || []).join(", ") }));
         populateSelect(topicsVaultFilter, topicsCache.map((topic) => topic.vault), "All vaults");
         populateSelect(topicsTypeFilter, topicsCache.map((topic) => topic.type), "All types");
@@ -1968,6 +2082,12 @@ function renderHtml() {
       try {
         const response = await fetch("/api/topics");
         const data = await response.json();
+        if (data.loading && !(data.topics || []).length) {
+          topicList.textContent = "Loading topics...";
+          setTimeout(loadSideTopics, 1200);
+          return;
+        }
+        if (data.error) throw new Error(data.error);
         sideTopicsCache = (data.topics || []).filter((topic) => !isScaffoldTopic(topic));
         sideTopicsLoaded = true;
         renderTopicTypeOptions();
@@ -2712,6 +2832,12 @@ function renderHtml() {
       try {
         const response = await fetch("/api/notes");
         const data = await response.json();
+        if (data.loading && !(data.notes || []).length) {
+          notesList.textContent = "Loading notes...";
+          setTimeout(() => loadNotes(options), 1200);
+          return;
+        }
+        if (data.error) throw new Error(data.error);
         const notes = data.notes || [];
         notesCache = notes;
         if (annotateResults) refreshResultAnnotations();
