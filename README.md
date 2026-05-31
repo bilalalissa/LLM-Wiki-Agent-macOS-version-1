@@ -279,7 +279,7 @@ For YouTube page media clips, install `yt-dlp` on the Mac that runs the agent:
 brew install yt-dlp
 ```
 
-If `yt-dlp` is installed somewhere outside `PATH`, launch the app with `YT_DLP_PATH=/path/to/yt-dlp`. The agent uses it to download one merged video file and available Arabic/English subtitles. Disable external video downloading with `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1`.
+If `yt-dlp` is installed somewhere outside `PATH`, launch the app with `YT_DLP_PATH=/path/to/yt-dlp`. The agent uses it to download one merged video file and available Arabic/English subtitles. YouTube extraction also needs a JavaScript runtime; the app automatically passes the current Node runtime to `yt-dlp` when available, or you can set `YT_DLP_JS_RUNTIME=/path/to/node`. Disable external video downloading with `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1`.
 
 Default Agent URL:
 

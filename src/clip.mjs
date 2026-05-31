@@ -223,11 +223,11 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
       "--write-auto-subs",
       "--write-subs",
       "--sub-langs",
-      "en.*,en,ar.*,ar",
+      "ar-orig,ar.*,ar,en.*,en",
       "--convert-subs",
       "srt",
       "-f",
-      "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b[ext=mp4]/b",
+      "b[ext=mp4][height<=360]/bv*[height<=360][ext=mp4]+ba[ext=m4a]/bv*[height<=360]+ba/b[height<=360]/b",
       "--merge-output-format",
       "mp4",
       "-o",
@@ -235,11 +235,14 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
       sourceUrl
     ], { timeoutMs: 15 * 60 * 1000 });
   } catch (error) {
+    const transcript = await saveYoutubeTranscript(vaultPath, dir, prefix, sourceUrl, ytDlp).catch(() => null);
     return {
       label,
       kind: "video-download",
       status: "failed",
       sourceUrl,
+      transcriptPath: transcript?.path || "",
+      transcriptText: transcript?.text || "",
       error: cleanText(error.message, 500)
     };
   }
@@ -248,7 +251,7 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
     .filter((file) => file.startsWith(prefix) && !file.endsWith(".part") && !file.endsWith(".ytdl"))
     .map((file) => path.join(dir, file));
   const videoFile = files.find((file) => /\.(mp4|m4v|mov|webm|mkv)$/i.test(file));
-  const transcriptFile = files.find((file) => /\.(srt|vtt)$/i.test(file));
+  const transcriptFile = preferredTranscriptFile(files);
   if (!videoFile) {
     return {
       label,
@@ -269,6 +272,41 @@ async function saveSinglePageVideo(vaultPath, request, stamp, title) {
     transcriptText: transcriptFile ? readTranscriptText(transcriptFile) : "",
     sourceUrl
   };
+}
+
+async function saveYoutubeTranscript(vaultPath, dir, prefix, sourceUrl, ytDlp) {
+  await runCommand(ytDlp.command, [
+    ...ytDlp.argsPrefix,
+    "--no-playlist",
+    "--skip-download",
+    "--write-auto-subs",
+    "--write-subs",
+    "--sub-langs",
+    "ar-orig,ar.*,ar,en.*,en",
+    "--convert-subs",
+    "srt",
+    "-o",
+    path.join(dir, `${prefix}.%(ext)s`),
+    sourceUrl
+  ], { timeoutMs: 5 * 60 * 1000 });
+  const files = fs.readdirSync(dir)
+    .filter((file) => file.startsWith(prefix) && !file.endsWith(".part") && !file.endsWith(".ytdl"))
+    .map((file) => path.join(dir, file));
+  const transcriptFile = preferredTranscriptFile(files);
+  if (!transcriptFile) return null;
+  return {
+    path: relativeVaultPath(vaultPath, transcriptFile),
+    text: readTranscriptText(transcriptFile)
+  };
+}
+
+function preferredTranscriptFile(files) {
+  const transcripts = files.filter((file) => /\.(srt|vtt)$/i.test(file));
+  return transcripts.find((file) => /\.ar-orig\.(srt|vtt)$/i.test(file)) ||
+    transcripts.find((file) => /\.ar[.-]/i.test(file)) ||
+    transcripts.find((file) => /\.en[.-]/i.test(file)) ||
+    transcripts[0] ||
+    "";
 }
 
 function runCommand(command, args, options = {}) {
@@ -305,7 +343,11 @@ function runCommand(command, args, options = {}) {
 }
 
 function ytDlpInvocation() {
-  if (process.env.YT_DLP_PATH) return { command: process.env.YT_DLP_PATH, argsPrefix: [] };
+  const node = nodeRuntimePath();
+  const argsPrefix = node
+    ? ["--js-runtimes", `node:${node}`, "--remote-components", "ejs:github"]
+    : [];
+  if (process.env.YT_DLP_PATH) return { command: process.env.YT_DLP_PATH, argsPrefix };
   const home = process.env.HOME || "";
   const candidates = [
     "/opt/homebrew/bin/yt-dlp",
@@ -317,9 +359,24 @@ function ytDlpInvocation() {
     path.join(home, "Library", "Python", "3.10", "bin", "yt-dlp")
   ].filter(Boolean);
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return { command: candidate, argsPrefix: [] };
+    if (fs.existsSync(candidate)) return { command: candidate, argsPrefix };
   }
-  return { command: "yt-dlp", argsPrefix: [] };
+  return { command: "yt-dlp", argsPrefix };
+}
+
+function nodeRuntimePath() {
+  if (process.env.YT_DLP_JS_RUNTIME) return process.env.YT_DLP_JS_RUNTIME;
+  const home = process.env.HOME || "";
+  const candidates = [
+    process.execPath,
+    "/usr/local/bin/node",
+    "/opt/homebrew/bin/node",
+    path.join(home, ".nvm", "current", "bin", "node")
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "";
 }
 
 function readTranscriptText(file) {

@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-05-31 - YouTube Single-Video Download Needed JS Runtime
+
+- **Area:** `src/clip.mjs`, `README.md`
+- **Symptom:** The Python/cybersecurity YouTube clip saved a raw source but did not download the video or transcript.
+- **Cause:** `yt-dlp` found YouTube subtitles, but the agent command did not pass a supported JavaScript runtime, so extraction failed before the merged video/subtitle save path completed.
+- **Fix:** The agent now passes Node to `yt-dlp` with remote EJS challenge components when available, prefers Arabic captions, uses a bounded 360p single-video format to avoid accidental best-quality multi-gigabyte downloads on long videos, and attempts a transcript-only fallback if the video download fails.
+- **Verification:** `yt-dlp --js-runtimes node:/usr/local/bin/node --remote-components ejs:github --skip-download --write-auto-subs --write-subs --sub-langs 'ar-orig,ar.*,ar,en.*,en' ...` successfully downloaded Arabic captions for the referenced video; `node --check src/clip.mjs`; `npm test`.
+
 ## 2026-05-31 - Files And Archive Needed Bulk Keyboard Selection
 
 - **Area:** `src/server.mjs`
