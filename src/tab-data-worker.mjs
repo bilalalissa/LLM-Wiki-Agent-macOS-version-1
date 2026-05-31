@@ -20,7 +20,7 @@ try {
 }
 
 function listTopicsFromIndexes(config) {
-  const topics = [];
+  const topics = new Map();
   for (const vaultPath of listVaults(config.vaultsRoot)) {
     const vault = vaultName(vaultPath);
     const index = readIfExists(path.join(vaultPath, "index.md"));
@@ -30,7 +30,7 @@ function listTopicsFromIndexes(config) {
       if (cells.length < 4) continue;
       const link = parseWikiLink(cells[0]);
       if (!link) continue;
-      topics.push({
+      addTopic(topics, {
         vault,
         title: link.title,
         path: link.path,
@@ -43,7 +43,26 @@ function listTopicsFromIndexes(config) {
       });
     }
   }
-  return topics.sort((a, b) => a.title.localeCompare(b.title));
+  for (const record of listFileHistory(config)) {
+    if (!record.sourcePage) continue;
+    addTopic(topics, {
+      vault: record.vault,
+      title: titleFromPath(record.sourcePage),
+      path: record.sourcePage.replace(/\.md$/i, ""),
+      type: "source",
+      summary: record.file || record.sourcePage,
+      updated: dateFromLocal(record.processedAt) || dateFromLocal(record.receivedAt),
+      tags: [],
+      created: dateFromLocal(record.receivedAt),
+      element: "source"
+    });
+  }
+  return [...topics.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
+function addTopic(topics, topic) {
+  const key = `${topic.vault}|${topic.path}`;
+  if (!topics.has(key)) topics.set(key, topic);
 }
 
 function parseWikiLink(cell) {
@@ -54,6 +73,17 @@ function parseWikiLink(cell) {
     path: pagePath,
     title: match[2] || path.basename(pagePath).replace(/-/g, " ")
   };
+}
+
+function titleFromPath(value) {
+  return path.basename(String(value || ""), path.extname(String(value || "")))
+    .replace(/^\d{4}-\d{2}-\d{2}--/, "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function dateFromLocal(value) {
+  return String(value || "").match(/\d{4}-\d{2}-\d{2}/)?.[0] || "";
 }
 
 function listDedicatedNotes(config) {
