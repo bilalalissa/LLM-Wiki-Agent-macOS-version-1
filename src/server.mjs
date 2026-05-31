@@ -849,8 +849,8 @@ function renderHtml() {
     tr:last-child td { border-bottom: 0; }
     .muted { color: var(--muted); }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
-    .side-topics { position: fixed; top: 88px; right: 20px; width: 340px; max-height: calc(100vh - 108px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
-    .side-topic-controls { position: sticky; top: -14px; z-index: 5; background: var(--panel); padding: 14px 0 10px; margin-top: -14px; border-bottom: 1px solid var(--line); }
+    .side-topics { position: fixed; top: 0; right: 20px; bottom: 20px; width: 340px; overflow: hidden; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
+    .side-topic-controls { flex: 0 0 auto; background: var(--panel); padding: 0 0 10px; border-bottom: 1px solid var(--line); }
     .side-topics h2 { margin: 0 0 10px; font-size: 15px; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
@@ -859,6 +859,7 @@ function renderHtml() {
     .side-topic-filters select, .side-topic-filters input { width: 100%; min-width: 0; box-sizing: border-box; padding: 7px; font-size: 13px; }
     .side-topic-filters .wide { grid-column: 1 / -1; }
     .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    #topic-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 10px; }
     .side-topics button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
     .side-topics button:hover { background: var(--soft); }
     .status { font-size: 13px; color: var(--muted); margin: -6px 0 16px; }
@@ -897,7 +898,7 @@ function renderHtml() {
     .config-path-row input { min-width: 0; }
     @media (max-width: 1240px) {
       main { margin-right: 0; padding-right: 20px; }
-      .side-topics { position: static; width: auto; max-height: 220px; margin: 0 20px 20px; }
+      .side-topics { position: static; width: auto; max-height: 220px; margin: 0 20px 20px; border-top: 1px solid var(--line); border-radius: 6px; }
     }
   </style>
 </head>
