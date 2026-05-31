@@ -375,6 +375,7 @@ Files, Archive, and Topics tables support local filtering and sorting:
 - Use the search box to filter visible rows.
 - Use dropdowns to filter by vault, status, type, or archive kind where available.
 - Click sortable column headers to toggle ascending or descending order.
+- In Files and Archive, click a row or checkbox to toggle it, `Shift`+click or `Shift`+Arrow to select a visible range, `Cmd`+click to toggle non-adjacent rows, `Cmd`+Arrow to jump focus to an edge row, and `Cmd`+A to select all visible rows.
 
 The Files tab can merge processed sources:
 

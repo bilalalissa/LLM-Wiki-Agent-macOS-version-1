@@ -943,6 +943,11 @@ function renderHtml() {
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
     th { background: var(--soft); font-weight: 700; }
     tr:last-child td { border-bottom: 0; }
+    tr.selectable-row { cursor: default; }
+    tr.selectable-row:hover td { background: color-mix(in srgb, var(--soft) 72%, transparent); }
+    tr.selectable-row.selected td { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+    tr.selectable-row:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+    tr.selectable-row input[type="checkbox"] { accent-color: var(--accent); }
     .muted { color: var(--muted); }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
     .side-topics { position: fixed; top: 0; right: 20px; bottom: 20px; width: 340px; overflow: hidden; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
@@ -1348,6 +1353,10 @@ function renderHtml() {
     let topicsCache = [];
     let sideTopicsLoaded = false;
     let sideTopicsLoading = false;
+    const tableSelection = {
+      files: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" },
+      archives: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" }
+    };
     const tableSort = {
       files: { key: "processedAtMs", dir: "desc" },
       archives: { key: "archivedAtMs", dir: "desc" },
@@ -1515,6 +1524,8 @@ function renderHtml() {
       archivesKindFilter.value = "";
       renderArchivesTable();
     });
+    setupSelectionTable("files", filesBody, ".source-select");
+    setupSelectionTable("archives", archivesBody, ".archive-select");
     topicsFilter.addEventListener("input", renderTopicsTable);
     topicsVaultFilter.addEventListener("change", renderTopicsTable);
     topicsTypeFilter.addEventListener("change", renderTopicsTable);
@@ -1618,22 +1629,29 @@ function renderHtml() {
         .filter((file) => !filesVaultFilter.value || file.vault === filesVaultFilter.value)
         .filter((file) => !filesStatusFilter.value || file.status === filesStatusFilter.value), "files");
       if (!filesCache.length) {
+        tableSelection.files.visibleKeys = [];
         filesBody.innerHTML = '<tr><td colspan="7" class="muted">No processed files yet.</td></tr>';
         return;
       }
       if (!files.length) {
+        tableSelection.files.visibleKeys = [];
         filesBody.innerHTML = '<tr><td colspan="7" class="muted">No files match the current filters.</td></tr>';
         return;
       }
-      filesBody.innerHTML = files.map((file) => '<tr>' +
-        '<td><input class="source-select" type="checkbox" data-vault="' + escapeHtml(file.vault) + '" data-file="' + escapeHtml(file.file) + '" data-source-page="' + escapeHtml(file.sourcePage || "") + '"></td>' +
+      tableSelection.files.visibleKeys = files.map((file) => sourceSelectionKey(file));
+      filesBody.innerHTML = files.map((file) => {
+        const key = sourceSelectionKey(file);
+        return '<tr class="selectable-row' + (tableSelection.files.selected.has(key) ? " selected" : "") + '" tabindex="0" data-selection-table="files" data-selection-key="' + escapeHtml(key) + '">' +
+        '<td><input class="source-select" type="checkbox" ' + (tableSelection.files.selected.has(key) ? "checked " : "") + 'data-selection-key="' + escapeHtml(key) + '" data-vault="' + escapeHtml(file.vault) + '" data-file="' + escapeHtml(file.file) + '" data-source-page="' + escapeHtml(file.sourcePage || "") + '"></td>' +
         '<td>' + escapeHtml(file.number) + '</td>' +
         '<td>' + escapeHtml(file.vault) + '</td>' +
         '<td><div class="path">' + escapeHtml(file.file) + '</div><div class="muted path">' + escapeHtml(file.sourcePage || "") + '</div></td>' +
         '<td>' + escapeHtml(file.receivedAt) + '</td>' +
         '<td>' + escapeHtml(file.processedAt) + '</td>' +
         '<td>' + escapeHtml(file.status) + '</td>' +
-      '</tr>').join("");
+      '</tr>';
+      }).join("");
+      renderSelectionState("files");
     }
 
     async function deleteSelectedSources() {
@@ -1760,6 +1778,10 @@ function renderHtml() {
       }));
     }
 
+    function sourceSelectionKey(file) {
+      return selectionKey(file.vault, file.file, file.sourcePage || "");
+    }
+
     function titleFromPath(value) {
       const base = String(value).split("/").pop().replace(/\\.[^.]+$/, "").replace(/^\\d{4}-\\d{2}-\\d{2}--/, "");
       return base.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") || "Renamed source";
@@ -1830,22 +1852,29 @@ function renderHtml() {
         .filter((item) => !archivesVaultFilter.value || item.vault === archivesVaultFilter.value)
         .filter((item) => !archivesKindFilter.value || item.kind === archivesKindFilter.value), "archives");
       if (!archivesCache.length) {
+        tableSelection.archives.visibleKeys = [];
         archivesBody.innerHTML = '<tr><td colspan="7" class="muted">No archived sources yet.</td></tr>';
         return;
       }
       if (!archives.length) {
+        tableSelection.archives.visibleKeys = [];
         archivesBody.innerHTML = '<tr><td colspan="7" class="muted">No archived items match the current filters.</td></tr>';
         return;
       }
-      archivesBody.innerHTML = archives.map((item) => '<tr>' +
-        '<td><input class="archive-select" type="checkbox" data-vault="' + escapeHtml(item.vault) + '" data-file="' + escapeHtml(item.file) + '" data-relation="' + escapeHtml(item.relation || "") + '"></td>' +
+      tableSelection.archives.visibleKeys = archives.map((item) => archiveSelectionKey(item));
+      archivesBody.innerHTML = archives.map((item) => {
+        const key = archiveSelectionKey(item);
+        return '<tr class="selectable-row' + (tableSelection.archives.selected.has(key) ? " selected" : "") + '" tabindex="0" data-selection-table="archives" data-selection-key="' + escapeHtml(key) + '">' +
+        '<td><input class="archive-select" type="checkbox" ' + (tableSelection.archives.selected.has(key) ? "checked " : "") + 'data-selection-key="' + escapeHtml(key) + '" data-vault="' + escapeHtml(item.vault) + '" data-file="' + escapeHtml(item.file) + '" data-relation="' + escapeHtml(item.relation || "") + '"></td>' +
         '<td>' + escapeHtml(item.number) + '</td>' +
         '<td>' + escapeHtml(item.vault) + '</td>' +
         '<td>' + escapeHtml(item.kind) + '</td>' +
         '<td>' + escapeHtml(item.relation || "Archive-only item") + '</td>' +
         '<td class="path">' + escapeHtml(item.file) + '</td>' +
         '<td>' + escapeHtml(item.archivedAt) + '</td>' +
-      '</tr>').join("");
+      '</tr>';
+      }).join("");
+      renderSelectionState("archives");
     }
 
     async function restoreSelectedArchives() {
@@ -1914,6 +1943,144 @@ function renderHtml() {
         file: item.dataset.file,
         relation: item.dataset.relation
       }));
+    }
+
+    function archiveSelectionKey(item) {
+      return selectionKey(item.vault, item.file, item.relation || "");
+    }
+
+    function selectionKey(...parts) {
+      return parts.map((part) => encodeURIComponent(String(part || ""))).join("|");
+    }
+
+    function setupSelectionTable(table, body, checkboxSelector) {
+      body.addEventListener("click", (event) => {
+        const checkbox = event.target.closest(checkboxSelector);
+        const row = event.target.closest("tr[data-selection-key]");
+        if (!row || !body.contains(row)) return;
+        if (!checkbox && event.target.closest("a, button, input, select, textarea")) return;
+        event.preventDefault();
+        applyPointerSelection(table, row.dataset.selectionKey, event);
+      });
+      body.addEventListener("focusin", (event) => {
+        const row = event.target.closest("tr[data-selection-key]");
+        if (!row || !body.contains(row)) return;
+        const state = tableSelection[table];
+        state.focusKey = row.dataset.selectionKey;
+        if (!state.anchorKey) state.anchorKey = row.dataset.selectionKey;
+      });
+      body.addEventListener("keydown", (event) => handleSelectionKeydown(table, body, event));
+    }
+
+    function applyPointerSelection(table, key, event) {
+      const state = tableSelection[table];
+      if (!key) return;
+      if (event.shiftKey && state.anchorKey) {
+        selectRange(table, state.anchorKey, key, true);
+      } else {
+        toggleSelectionKey(table, key);
+        state.anchorKey = key;
+      }
+      state.focusKey = key;
+      renderSelectionState(table);
+      focusSelectionRow(table, key);
+    }
+
+    function handleSelectionKeydown(table, body, event) {
+      if (event.target.matches("input:not([type='checkbox']), textarea, select")) return;
+      const state = tableSelection[table];
+      const keys = state.visibleKeys;
+      if (!keys.length) return;
+      if ((event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === "a") {
+        event.preventDefault();
+        for (const key of keys) state.selected.add(key);
+        state.anchorKey = keys[0];
+        state.focusKey = keys[keys.length - 1];
+        renderSelectionState(table);
+        focusSelectionRow(table, state.focusKey);
+        return;
+      }
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        const key = focusedSelectionKey(body) || state.focusKey || keys[0];
+        toggleSelectionKey(table, key);
+        state.anchorKey = key;
+        state.focusKey = key;
+        renderSelectionState(table);
+        focusSelectionRow(table, key);
+        return;
+      }
+      const targetIndex = keyboardTargetIndex(table, body, event);
+      if (targetIndex < 0) return;
+      event.preventDefault();
+      const targetKey = keys[targetIndex];
+      const anchorKey = state.anchorKey || focusedSelectionKey(body) || state.focusKey || keys[targetIndex];
+      if (event.shiftKey) {
+        selectRange(table, anchorKey, targetKey, true);
+        state.anchorKey = anchorKey;
+      }
+      state.focusKey = targetKey;
+      if (!event.shiftKey) state.anchorKey = targetKey;
+      renderSelectionState(table);
+      focusSelectionRow(table, targetKey);
+    }
+
+    function keyboardTargetIndex(table, body, event) {
+      const keys = tableSelection[table].visibleKeys;
+      const currentKey = focusedSelectionKey(body) || tableSelection[table].focusKey || keys[0];
+      const currentIndex = Math.max(0, keys.indexOf(currentKey));
+      if (event.key === "Home" || ((event.metaKey || event.ctrlKey) && event.key === "ArrowUp") || ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft")) return 0;
+      if (event.key === "End" || ((event.metaKey || event.ctrlKey) && event.key === "ArrowDown") || ((event.metaKey || event.ctrlKey) && event.key === "ArrowRight")) return keys.length - 1;
+      if (event.key === "ArrowUp") return Math.max(0, currentIndex - 1);
+      if (event.key === "ArrowDown") return Math.min(keys.length - 1, currentIndex + 1);
+      return -1;
+    }
+
+    function focusedSelectionKey(body) {
+      const row = document.activeElement?.closest?.("tr[data-selection-key]");
+      return row && body.contains(row) ? row.dataset.selectionKey : "";
+    }
+
+    function toggleSelectionKey(table, key) {
+      const selected = tableSelection[table].selected;
+      if (selected.has(key)) selected.delete(key);
+      else selected.add(key);
+    }
+
+    function selectRange(table, fromKey, toKey, checked) {
+      const state = tableSelection[table];
+      const keys = state.visibleKeys;
+      const from = keys.indexOf(fromKey);
+      const to = keys.indexOf(toKey);
+      if (from < 0 || to < 0) {
+        if (checked) state.selected.add(toKey);
+        else state.selected.delete(toKey);
+        return;
+      }
+      const start = Math.min(from, to);
+      const end = Math.max(from, to);
+      for (let index = start; index <= end; index += 1) {
+        if (checked) state.selected.add(keys[index]);
+        else state.selected.delete(keys[index]);
+      }
+    }
+
+    function renderSelectionState(table) {
+      const state = tableSelection[table];
+      const body = table === "files" ? filesBody : archivesBody;
+      body.querySelectorAll("tr[data-selection-key]").forEach((row) => {
+        const selected = state.selected.has(row.dataset.selectionKey);
+        row.classList.toggle("selected", selected);
+        const checkbox = row.querySelector("input[type='checkbox']");
+        if (checkbox) checkbox.checked = selected;
+      });
+    }
+
+    function focusSelectionRow(table, key) {
+      const body = table === "files" ? filesBody : archivesBody;
+      const row = Array.from(body.querySelectorAll("tr[data-selection-key]"))
+        .find((item) => item.dataset.selectionKey === key);
+      if (row) row.focus({ preventScroll: true });
     }
 
     async function loadTopics() {

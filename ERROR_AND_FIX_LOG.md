@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-05-31 - Files And Archive Needed Bulk Keyboard Selection
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Files and Archive rows could only be selected one checkbox at a time, which made bulk archive, restore, delete, merge, and rename workflows slow.
+- **Cause:** The tables rendered independent checkboxes without a shared row selection state or keyboard focus model.
+- **Fix:** Files and Archive now preserve visible row selection state and support row/checkbox click toggles, `Shift`+click, `Shift`+Arrow range selection, `Cmd`+click non-adjacent toggles, `Cmd`+Arrow edge jumps, and `Cmd`+A select-all for visible rows.
+- **Verification:** `node --check src/server.mjs`.
+
 ## 2026-05-31 - YouTube Clip Saved Chunks Instead Of One Video
 
 - **Area:** `extension/arc-clipper`, `src/clip.mjs`
