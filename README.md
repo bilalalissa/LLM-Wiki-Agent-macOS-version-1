@@ -294,7 +294,7 @@ The extension watches visible media elements, resource timing entries, browser m
 
 The extension popup prepares clips before submission. It shows a progress bar, detected media details, how many media items were downloaded, and which items are URL-only. Click `Submit to vault` only after reviewing the prepared clip.
 
-For video pages, start playback only long enough for the page to expose its media manifest URL, then click `Prepare page media`. The extension requests detected HLS/DASH manifests (`.m3u8` and `.mpd`) directly from the source and expands their segment/chunk URLs immediately. It does not wait for playback to finish and it does not poll until chunks finish loading. If a site does not expose a readable manifest, hidden chunks cannot be requested directly; the generated source keeps any already-visible media URLs for traceability.
+For video pages, start playback only long enough for the page to expose its media manifest URL, then click `Prepare page media`. The extension requests detected HLS/DASH manifests (`.m3u8` and `.mpd`) directly from the source and expands their segment/chunk URLs immediately, including common HLS `.ts` and extensionless signed segment URLs. It downloads chunks in parallel and no longer limits the agent-side stream package to the first 400 chunks. It does not wait for playback to finish and it does not poll until chunks finish loading. If a site does not expose a readable manifest, hidden chunks cannot be requested directly; the generated source keeps any already-visible media URLs for traceability.
 
 [Back to top](#top)
 

@@ -3104,12 +3104,13 @@ function renderHtml() {
       return Array.from(root.querySelectorAll?.(".note-indicator") || []).filter((node) => range.intersectsNode(node));
     }
 
-    loadSideTopics();
+    topicList.textContent = "Topics load shortly after startup.";
+    setTimeout(loadSideTopics, 5000);
     loadChatVaults();
     loadStatus();
     loadProviderStatus();
     loadNotes();
-    setInterval(loadSideTopics, 10000);
+    setInterval(loadSideTopics, 60000);
     setInterval(loadChatVaults, 10000);
     setInterval(loadStatus, 5000);
   </script>

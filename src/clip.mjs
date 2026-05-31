@@ -114,7 +114,7 @@ function renderClipMarkdown({ payload, captureType, title, now, savedMedia }) {
 }
 
 async function saveClipMedia(vaultPath, mediaList, stamp) {
-  const items = Array.isArray(mediaList) ? mediaList.slice(0, 400) : [];
+  const items = Array.isArray(mediaList) ? mediaList : [];
   const streamItems = items.filter(isStreamChunkMedia);
   const regularItems = items.filter((item) => !isStreamChunkMedia(item));
   const saved = [];
@@ -243,10 +243,10 @@ function saveDataUrlAssetInDir(dir, vaultPath, dataUrl, stamp, index, label, sou
 
 function isStreamChunkMedia(media) {
   const value = `${media?.url || media?.src || ""} ${media?.filename || ""} ${media?.alt || ""}`.toLowerCase();
-  return /\.(m4s|mpd|m3u8)(\?|#|\s|$)/.test(value) ||
+  return /\.(m4s|mpd|m3u8|ts|cmfv|cmfa)(\?|#|\s|$)/.test(value) ||
     /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(value) ||
-    /(^|\b)(init|seg[_-]?\d+|chunk[_-]?\d+)[^/\s]*\.mp4(\?|#|\s|$)/.test(value) ||
-    /cloudflarestream\.com/.test(value) && /(manifest|playlist|chunk|segment|seg_|\.m4s|\.mpd|\.m3u8|\/video\/|\/audio\/)/.test(value);
+    /(^|\b)(init|seg[_-]?\d+|chunk[_-]?\d+)[^/\s]*\.(mp4|ts|m4s)(\?|#|\s|$)/.test(value) ||
+    /cloudflarestream\.com/.test(value) && /(manifest|playlist|chunk|segment|seg_|\.m4s|\.mpd|\.m3u8|\.ts|\/video\/|\/audio\/)/.test(value);
 }
 
 function extensionForMime(mime) {

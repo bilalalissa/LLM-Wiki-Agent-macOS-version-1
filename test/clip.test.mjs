@@ -116,3 +116,26 @@ test("browser stream chunks are saved as one package entry", async () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(vault, result.assets[0]), "utf8"));
   assert.equal(manifest.parts.filter((item) => item.path).length, 4);
 });
+
+test("browser stream package keeps more than 400 manifest chunks", async () => {
+  const { root, vault } = makeVaultRoot();
+  const dataUrl = `data:video/mp2t;base64,${Buffer.from("chunk").toString("base64")}`;
+  const media = Array.from({ length: 425 }, (_item, index) => ({
+    url: `https://stream.example/hls/segment-${index + 1}.ts`,
+    filename: `segment-${index + 1}.ts`,
+    dataUrl
+  }));
+
+  const result = await saveBrowserClip(makeConfig(root), {
+    vault: "Research-vault",
+    captureType: "media",
+    title: "Long HLS stream",
+    url: "https://example.test/video",
+    text: "Long video clip.",
+    media
+  });
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(vault, result.assets[0]), "utf8"));
+  assert.equal(manifest.parts.length, 425);
+  assert.equal(manifest.parts.filter((item) => item.path).length, 425);
+});

@@ -3,6 +3,7 @@ const maxInlineTransferChars = 180 * 1024 * 1024;
 const maxBrowserMediaBytes = 50 * 1024 * 1024;
 const maxManifestExpansionItems = 12000;
 const maxManifestDepth = 3;
+const mediaDownloadConcurrency = 6;
 const mediaByTab = new Map();
 let preparedClip = null;
 
@@ -155,20 +156,11 @@ async function enrichMedia(payload, tabId, requestId = "") {
   const preparedItems = uniqueMediaItems(items).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
   const expandedItems = await expandStreamManifests(preparedItems, requestId);
   const mediaItems = uniqueMediaItems(expandedItems).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
+  const downloadedMedia = await downloadMediaItems(mediaItems, requestId);
   const media = [];
   let inlineChars = 0;
-  for (const [index, item] of mediaItems.entries()) {
-    let next;
-    if (item?.dataUrl) {
-      next = {
-        ...item,
-        downloadStatus: "downloaded",
-        downloadBytes: approximateDataUrlBytes(item.dataUrl),
-        downloadMethod: "page-data"
-      };
-    } else {
-      next = await mediaPayload(item.url || item.src, item.alt || item.title || "", item);
-    }
+  for (let index = 0; index < downloadedMedia.length; index += 1) {
+    let next = downloadedMedia[index];
     if (next?.dataUrl) {
       const nextSize = next.dataUrl.length;
       if (inlineChars + nextSize > maxInlineTransferChars) {
@@ -179,12 +171,6 @@ async function enrichMedia(payload, tabId, requestId = "") {
       }
     }
     media.push(next);
-    if (requestId) {
-      const percent = mediaItems.length
-        ? 30 + Math.round(((index + 1) / mediaItems.length) * 60)
-        : 90;
-      progress(requestId, percent, `Checked media ${index + 1} of ${mediaItems.length}.`);
-    }
   }
   const summary = mediaSummary(media);
   const text = payload?.captureType === "media"
@@ -198,6 +184,39 @@ async function enrichMedia(payload, tabId, requestId = "") {
       ].filter(Boolean).join("\n")
     : payload.text;
   return { ...payload, text, media };
+}
+
+async function downloadMediaItems(items, requestId = "") {
+  const media = new Array(items.length);
+  let nextIndex = 0;
+  let completed = 0;
+  const workerCount = Math.min(mediaDownloadConcurrency, Math.max(items.length, 1));
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const item = items[index];
+      if (item?.dataUrl) {
+        media[index] = {
+          ...item,
+          downloadStatus: "downloaded",
+          downloadBytes: approximateDataUrlBytes(item.dataUrl),
+          downloadMethod: "page-data"
+        };
+      } else {
+        media[index] = await mediaPayload(item.url || item.src, item.alt || item.title || "", item);
+      }
+      completed += 1;
+      if (requestId) {
+        const percent = items.length
+          ? 30 + Math.round((completed / items.length) * 60)
+          : 90;
+        progress(requestId, percent, `Checked media ${completed} of ${items.length}.`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return media.filter(Boolean);
 }
 
 async function mediaPayload(url, alt, source = {}) {
@@ -279,7 +298,10 @@ async function expandStreamManifests(items, requestId = "") {
   }
   if (requestId) {
     const added = result.length - items.length;
-    progress(requestId, 29, added ? `Requested ${added} stream parts directly from manifests.` : "No stream parts were exposed by detected manifests.");
+    const capped = result.length >= maxManifestExpansionItems;
+    progress(requestId, 29, added
+      ? `Requested ${added} stream parts directly from manifests${capped ? ` (stopped at safety cap ${maxManifestExpansionItems})` : ""}.`
+      : "No stream parts were exposed by detected manifests.");
   }
   return result;
 }
@@ -311,8 +333,16 @@ async function expandManifestUrl(manifestUrl, state) {
 async function expandHlsManifest(text, manifestUrl, state) {
   const found = [];
   const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const isMediaPlaylist = lines.some((line) => /^#EXTINF\b|^#EXT-X-TARGETDURATION\b|^#EXT-X-MAP\b|^#EXT-X-BYTERANGE\b/i.test(line));
   for (let index = 0; index < lines.length && found.length < state.remaining; index += 1) {
     const line = lines[index];
+    if (line.startsWith("#EXT-X-I-FRAME-STREAM-INF")) {
+      const uri = attrValue(line, "URI");
+      if (uri) {
+        found.push(...await expandManifestUrl(absoluteUrlFrom(uri, manifestUrl), { ...state, depth: state.depth + 1, remaining: state.remaining - found.length }));
+      }
+      continue;
+    }
     if (line.startsWith("#EXT-X-MAP")) {
       const uri = attrValue(line, "URI");
       if (uri) found.push(absoluteUrlFrom(uri, manifestUrl));
@@ -331,9 +361,9 @@ async function expandHlsManifest(text, manifestUrl, state) {
     if (line.startsWith("#")) continue;
     const url = absoluteUrlFrom(line, manifestUrl);
     if (!url) continue;
-    if (isStreamManifestUrl(url)) {
+    if (!isMediaPlaylist || isStreamManifestUrl(url)) {
       found.push(...await expandManifestUrl(url, { ...state, depth: state.depth + 1, remaining: state.remaining - found.length }));
-    } else if (isLikelyStreamingMediaUrl(url)) {
+    } else {
       found.push(url);
     }
   }
@@ -359,7 +389,7 @@ function explicitDashUrls(xml, manifestUrl) {
     /<BaseURL[^>]*>([^<]+)<\/BaseURL>/gi,
     /<SegmentURL[^>]*\smedia=["']([^"']+)["'][^>]*>/gi,
     /<Initialization[^>]*\ssourceURL=["']([^"']+)["'][^>]*>/gi,
-    /["']([^"']+\.(?:m4s|mp4|webm|aac)(?:\?[^"']*)?)["']/gi
+    /["']([^"']+\.(?:m4s|mp4|webm|aac|ts|cmfv|cmfa)(?:\?[^"']*)?)["']/gi
   ];
   for (const pattern of patterns) {
     for (const match of xml.matchAll(pattern)) {
@@ -599,7 +629,7 @@ function filenameFromUrl(value) {
 }
 
 function looksLikeMedia(url) {
-  return /\.(png|jpe?g|gif|webp|svg|pdf|mp3|wav|m4a|aiff|mp4|mov|m4v|m4s|m3u8|mpd|webm|aac)(\?|#|$)/i.test(String(url || ""));
+  return /\.(png|jpe?g|gif|webp|svg|pdf|mp3|wav|m4a|aiff|mp4|mov|m4v|m4s|m3u8|mpd|webm|aac|ts|cmfv|cmfa)(\?|#|$)/i.test(String(url || ""));
 }
 
 function isStreamManifestUrl(url) {
@@ -611,7 +641,7 @@ function isLikelyStreamingMediaUrl(url) {
   const normalized = url.toLowerCase();
   if (/\/sdk(\.|-|\/)|sdk\.latest\.js|\.js(\?|#|$)|\.css(\?|#|$)/.test(normalized)) return false;
   return looksLikeMedia(normalized) ||
-    /\.(m4s|m3u8|mpd|webm|aac)(\?|#|$)/.test(normalized) ||
+    /\.(m4s|m3u8|mpd|webm|aac|ts|cmfv|cmfa)(\?|#|$)/.test(normalized) ||
     /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(normalized) ||
     /\/seg[_-]?\d+/.test(normalized) ||
     (normalized.includes("cloudflarestream.com") && /(manifest|playlist|chunk|segment|\.m3u8|\.mpd|\.m4s|\/video|\/audio)/.test(normalized)) ||
@@ -622,14 +652,14 @@ function mediaKind(url) {
   const text = String(url || "").toLowerCase();
   if (/\.(png|jpe?g|gif|webp|svg)(\?|#|$)/.test(text)) return "image";
   if (/\.(mp3|wav|m4a|aiff)(\?|#|$)/.test(text)) return "audio";
-  if (/\.(mp4|mov|m4v)(\?|#|$)/.test(text)) return "video";
+  if (/\.(mp4|mov|m4v|ts|m4s|cmfv|cmfa)(\?|#|$)/.test(text)) return "video";
   if (/\.pdf(\?|#|$)/.test(text)) return "pdf";
   return "media";
 }
 
 function mediaPriority(url) {
   const text = String(url || "").toLowerCase();
-  if (/\.(m4s|m3u8|mpd)(\?|#|$)|\/(audio|video)\/\d+\/(init|seg_|chunk_)|\/seg[_-]?\d+|videoplayback/.test(text)) return 100;
+  if (/\.(m4s|m3u8|mpd|ts|cmfv|cmfa)(\?|#|$)|\/(audio|video)\/\d+\/(init|seg_|chunk_)|\/seg[_-]?\d+|videoplayback/.test(text)) return 100;
   if (/\.(mp4|mov|m4v|webm)(\?|#|$)/.test(text)) return 90;
   if (/\.(mp3|wav|m4a|aiff|aac)(\?|#|$)/.test(text)) return 80;
   if (/\.pdf(\?|#|$)/.test(text)) return 70;

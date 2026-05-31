@@ -48,3 +48,19 @@
 - **Cause:** Older playback-wait helper code remained in the extension even after the popup path started using manifest expansion.
 - **Fix:** Removed the playback-completion wait helper from the background script, increased manifest expansion capacity for long streams, and improved DASH `SegmentTemplate` expansion from manifest duration metadata.
 - **Verification:** `node --check extension/arc-clipper/background.js` and `npm test`.
+
+## 2026-05-31 - Stream Capture Saved Only The First Chunk Window
+
+- **Area:** `extension/arc-clipper/background.js`, `src/clip.mjs`
+- **Symptom:** Faster media capture downloaded some stream chunks and then treated that partial set as the full media.
+- **Cause:** HLS segment detection skipped `.ts` and extensionless manifest segment lines, and the local agent truncated incoming media lists to the first 400 items before saving stream packages.
+- **Fix:** HLS media playlists now include every manifest segment line, stream detection includes `.ts` and CMAF segment extensions, manifest-expanded chunks download in parallel, and the agent saves the full media list it receives.
+- **Verification:** `node --check extension/arc-clipper/background.js`, `node --check src/clip.mjs`, and `npm test`.
+
+## 2026-05-31 - Startup Media Reprocessing Could Block Local API
+
+- **Area:** `src/ingest-lib.mjs`
+- **Symptom:** After reinstalling, the server listened on port `8789` but `/api/status` could time out while startup ingest inspected existing media source pages.
+- **Cause:** pending media reprocessing scanned existing wiki source pages as part of normal auto-ingest.
+- **Fix:** normal auto-ingest now processes new raw candidates only; pending media reprocessing is opt-in with `LLM_WIKI_REPROCESS_PENDING_MEDIA=1`, ingest loops yield between files, and the expensive sidebar topic scan is delayed after startup and refreshed less often.
+- **Verification:** `/api/status` after reinstall.

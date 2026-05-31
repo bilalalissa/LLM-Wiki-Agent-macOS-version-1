@@ -17,9 +17,12 @@ export async function ingestVault(vaultPath, config, provider = createProvider(c
   const candidates = listRawCandidates(vaultPath);
   const results = [];
   for (const sourcePath of candidates) {
+    await yieldToEventLoop();
     results.push(await ingestFile(vaultPath, sourcePath, config, provider));
   }
-  results.push(...await reprocessPendingMediaPages(vaultPath, provider));
+  if (process.env.LLM_WIKI_REPROCESS_PENDING_MEDIA === "1") {
+    results.push(...await reprocessPendingMediaPages(vaultPath, provider));
+  }
   return results;
 }
 
@@ -142,6 +145,7 @@ async function reprocessPendingMediaPages(vaultPath, provider) {
   walk(sourceDir, files);
 
   for (const sourcePagePath of files.filter((file) => file.endsWith(".md"))) {
+    await yieldToEventLoop();
     const text = fs.readFileSync(sourcePagePath, "utf8");
     if (!/^media_kind:\s*.+$/m.test(text) || /^media_analysis_status:\s*analyzed\s*$/m.test(text)) continue;
     const assetRel = text.match(/^source_path:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
@@ -191,6 +195,10 @@ async function reprocessPendingMediaPages(vaultPath, provider) {
     });
   }
   return results;
+}
+
+function yieldToEventLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function createConceptPages(vaultPath, { date, analysis, sourceRel }) {
