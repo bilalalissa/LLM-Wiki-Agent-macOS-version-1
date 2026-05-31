@@ -22,8 +22,8 @@ export async function listTopicsAsync(config) {
   const topics = new Map();
   for (const vaultPath of listVaults(config.vaultsRoot)) {
     const vault = vaultName(vaultPath);
-    const index = readIfExists(path.join(vaultPath, "index.md"));
-    for (const topic of topicsFromIndex(vaultPath, vault, index)) {
+    const index = await readIfExistsAsync(path.join(vaultPath, "index.md"));
+    for (const topic of await topicsFromIndexAsync(vaultPath, vault, index)) {
       topics.set(topicKey(topic), topic);
     }
     await yieldToEventLoop();
@@ -34,6 +34,33 @@ export async function listTopicsAsync(config) {
   }
   return [...topics.values()]
     .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+async function topicsFromIndexAsync(vaultPath, vault, index) {
+  const topics = [];
+  const lines = index.split(/\r?\n/);
+  for (const [lineIndex, line] of lines.entries()) {
+    if (!line.startsWith("| [[")) continue;
+    const cells = line.split("|").map((cell) => cell.trim()).filter(Boolean);
+    if (cells.length < 4) continue;
+    const link = parseWikiLink(cells[0]);
+    if (!link) continue;
+    const pageRel = link.path.endsWith(".md") ? link.path : `${link.path}.md`;
+    const frontmatter = parseFrontmatter(await readIfExistsAsync(path.join(vaultPath, pageRel)));
+    topics.push({
+      vault,
+      title: link.title,
+      path: link.path,
+      type: cells[1],
+      summary: cells[2],
+      updated: cells[3],
+      tags: frontmatter.tags,
+      created: frontmatter.created,
+      element: cells[1]
+    });
+    if (lineIndex % 20 === 19) await yieldToEventLoop();
+  }
+  return topics;
 }
 
 function topicKey(topic) {
@@ -80,7 +107,7 @@ async function topicsFromWikiFilesAsync(vaultPath, vault) {
   walkMarkdown(wikiDir, files);
   const topics = [];
   for (const [index, file] of files.entries()) {
-    const topic = topicFromWikiFile(vaultPath, vault, file);
+    const topic = await topicFromWikiFileAsync(vaultPath, vault, file);
     if (topic) topics.push(topic);
     if (index % 20 === 19) await yieldToEventLoop();
   }
@@ -100,6 +127,24 @@ function walkMarkdown(dir, files) {
 
 function topicFromWikiFile(vaultPath, vault, file) {
   const markdown = readIfExists(file);
+  const frontmatter = parseFrontmatter(markdown);
+  const relWithExt = path.relative(vaultPath, file).replace(/\\/g, "/");
+  const rel = relWithExt.replace(/\.md$/i, "");
+  return {
+    vault,
+    title: frontmatter.title || firstHeading(markdown) || titleFromPath(rel),
+    path: rel,
+    type: frontmatter.type || typeFromPath(rel),
+    summary: summaryFromMarkdown(markdown),
+    updated: frontmatter.updated || updatedFromStat(file),
+    tags: frontmatter.tags,
+    created: frontmatter.created,
+    element: frontmatter.type || typeFromPath(rel)
+  };
+}
+
+async function topicFromWikiFileAsync(vaultPath, vault, file) {
+  const markdown = await readIfExistsAsync(file);
   const frontmatter = parseFrontmatter(markdown);
   const relWithExt = path.relative(vaultPath, file).replace(/\\/g, "/");
   const rel = relWithExt.replace(/\.md$/i, "");
@@ -191,6 +236,14 @@ function firstUsefulLine(markdown) {
 function updatedFromStat(file) {
   try {
     return fs.statSync(file).mtime.toISOString().slice(0, 10);
+  } catch {
+    return "";
+  }
+}
+
+async function readIfExistsAsync(file) {
+  try {
+    return await fs.promises.readFile(file, "utf8");
   } catch {
     return "";
   }

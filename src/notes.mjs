@@ -25,7 +25,7 @@ export async function listNotesAsync(config) {
     for (const [index, file] of files.entries()) {
       const relativePath = path.relative(vaultPath, file);
       if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
-      const text = fs.readFileSync(file, "utf8");
+      const text = await readTextIfExists(file);
       notes.push(...parseNotes(text, vaultName(vaultPath), relativePath));
       if (index % 20 === 19) await yieldToEventLoop();
     }
@@ -192,6 +192,14 @@ function singleLine(value) {
 function quoteBlock(value) {
   const text = String(value || "").trim();
   return (text || " ").split(/\r?\n/).map((line) => `> ${line}`).join("\n");
+}
+
+async function readTextIfExists(file) {
+  try {
+    return await fs.promises.readFile(file, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 function yieldToEventLoop() {
