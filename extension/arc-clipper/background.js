@@ -117,7 +117,11 @@ async function collectAndSend(tabId, captureType) {
 async function submitPreparedClip(updates = {}) {
   if (!preparedClip) throw new Error("Prepare a clip before submitting.");
   const title = String(updates.title || "").trim();
-  if (title) preparedClip = { ...preparedClip, title };
+  preparedClip = {
+    ...preparedClip,
+    ...(title ? { title } : {}),
+    tags: normalizeClipTags(updates.tags)
+  };
   const result = await postClip(preparedClip);
   preparedClip = null;
   return result;
@@ -154,8 +158,9 @@ async function enrichMedia(payload, tabId, requestId = "") {
     }
   }
   const preparedItems = uniqueMediaItems(items).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
-  const expandedItems = await expandStreamManifests(preparedItems, requestId);
-  const mediaItems = uniqueMediaItems(expandedItems).sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
+  const streamReport = await inspectStreamManifests(preparedItems, requestId);
+  const mediaItems = uniqueMediaItems(preparedItems.filter((item) => !isStreamReferenceItem(item)))
+    .sort((a, b) => mediaPriority(b.url || b.src) - mediaPriority(a.url || a.src));
   const downloadedMedia = await downloadMediaItems(mediaItems, requestId);
   const media = [];
   let inlineChars = 0;
@@ -177,10 +182,11 @@ async function enrichMedia(payload, tabId, requestId = "") {
     ? [
         payload.text || `Media exported from ${payload.url || "this page"}`,
         "",
-        `Detected media items: ${summary.total}`,
-        `Downloaded media items before submit: ${summary.downloaded}`,
-        `URL-only media items: ${summary.urlOnly}`,
-        summary.failed ? `Failed media downloads: ${summary.failed}` : ""
+        streamReportText(streamReport),
+        `Detected non-stream media items: ${summary.total}`,
+        `Downloaded non-stream media items before submit: ${summary.downloaded}`,
+        `URL-only non-stream media items: ${summary.urlOnly}`,
+        summary.failed ? `Failed non-stream media downloads: ${summary.failed}` : ""
       ].filter(Boolean).join("\n")
     : payload.text;
   return { ...payload, text, media };
@@ -264,46 +270,52 @@ async function mediaPayload(url, alt, source = {}) {
   }
 }
 
-async function expandStreamManifests(items, requestId = "") {
-  const result = [...items];
+async function inspectStreamManifests(items, requestId = "") {
   const manifests = items
     .map((item) => item?.url || item?.src || "")
     .filter((url) => isStreamManifestUrl(url));
-  if (!manifests.length) return result;
+  if (!manifests.length) return [];
 
-  const seen = new Set(result.map((item) => item?.url || item?.src || "").filter(Boolean));
+  const reports = [];
+  const seenManifests = new Set();
   for (const [index, manifestUrl] of manifests.entries()) {
+    if (seenManifests.has(manifestUrl)) continue;
+    seenManifests.add(manifestUrl);
     if (requestId) {
-      progress(requestId, 26, `Requesting stream manifest ${index + 1} of ${manifests.length} directly from source...`);
+      progress(requestId, 26, `Inspecting stream manifest ${index + 1} of ${manifests.length} directly from source...`);
     }
     const expanded = await expandManifestUrl(manifestUrl, {
       depth: 0,
       visited: new Set(),
-      remaining: maxManifestExpansionItems - result.length
+      remaining: maxManifestExpansionItems
     });
-    for (const mediaUrl of expanded) {
-      if (!mediaUrl || seen.has(mediaUrl)) continue;
-      seen.add(mediaUrl);
-      result.push({
-        url: mediaUrl,
-        alt: "Stream part from manifest",
-        type: mediaKind(mediaUrl),
-        streamManifestUrl: manifestUrl,
-        streamGroup: filenameFromUrl(manifestUrl) || "manifest",
-        downloadMethod: "manifest-direct"
-      });
-      if (result.length >= maxManifestExpansionItems) break;
-    }
-    if (result.length >= maxManifestExpansionItems) break;
+    reports.push({
+      manifestUrl,
+      chunkCount: new Set(expanded.filter(Boolean)).size,
+      capped: expanded.length >= maxManifestExpansionItems
+    });
   }
   if (requestId) {
-    const added = result.length - items.length;
-    const capped = result.length >= maxManifestExpansionItems;
-    progress(requestId, 29, added
-      ? `Requested ${added} stream parts directly from manifests${capped ? ` (stopped at safety cap ${maxManifestExpansionItems})` : ""}.`
+    const chunks = reports.reduce((sum, item) => sum + item.chunkCount, 0);
+    progress(requestId, 29, chunks
+      ? `Found ${chunks} stream parts in source manifests; sending one clip summary without chunk files.`
       : "No stream parts were exposed by detected manifests.");
   }
-  return result;
+  return reports;
+}
+
+function streamReportText(reports) {
+  if (!reports.length) return "";
+  const lines = [
+    "Stream source inspection:",
+    "- Chunks are not uploaded to the agent or saved into Obsidian vault assets.",
+    "- The clip stores source manifest metadata only."
+  ];
+  for (const report of reports) {
+    lines.push(`- Manifest: ${report.manifestUrl}`);
+    lines.push(`  - Source chunks listed by manifest: ${report.chunkCount}${report.capped ? ` (at safety cap ${maxManifestExpansionItems})` : ""}`);
+  }
+  return lines.join("\n");
 }
 
 async function expandManifestUrl(manifestUrl, state) {
@@ -557,12 +569,32 @@ function summarizePreparedClip(payload) {
   const summary = mediaSummary(media);
   return {
     title: payload?.title || "Untitled clip",
+    tags: Array.isArray(payload?.tags) ? payload.tags : [],
     url: payload?.url || "",
     captureType: payload?.captureType || "page",
     textLength: String(payload?.text || "").length,
     media,
     summary
   };
+}
+
+function normalizeClipTags(value) {
+  const values = Array.isArray(value) ? value : String(value || "").split(/[,\n]/);
+  const seen = new Set();
+  const tags = [];
+  for (const item of values) {
+    const tag = String(item || "")
+      .trim()
+      .replace(/^#+/, "")
+      .replace(/\s+/g, "-")
+      .replace(/[^A-Za-z0-9/_-]/g, "")
+      .replace(/^\/+|\/+$/g, "")
+      .slice(0, 64);
+    if (!tag || seen.has(tag.toLowerCase())) continue;
+    seen.add(tag.toLowerCase());
+    tags.push(tag);
+  }
+  return tags;
 }
 
 function mediaSummary(media) {
@@ -634,6 +666,20 @@ function looksLikeMedia(url) {
 
 function isStreamManifestUrl(url) {
   return /\.(m3u8|mpd)(\?|#|$)/i.test(String(url || ""));
+}
+
+function isStreamReferenceItem(item) {
+  const url = String(item?.url || item?.src || "");
+  return Boolean(item?.streamManifestUrl) || isStreamManifestUrl(url) || isLikelyStreamingSegmentUrl(url);
+}
+
+function isLikelyStreamingSegmentUrl(url) {
+  const normalized = String(url || "").toLowerCase();
+  return /\.(m4s|ts|cmfv|cmfa)(\?|#|$)/.test(normalized) ||
+    /\/(audio|video)\/\d+\/(init|seg_|chunk_)/.test(normalized) ||
+    /\/seg[_-]?\d+/.test(normalized) ||
+    /(^|\b)(init|seg[_-]?\d+|chunk[_-]?\d+)[^/\s]*\.(mp4|ts|m4s)(\?|#|\s|$)/.test(normalized) ||
+    (normalized.includes("cloudflarestream.com") && /(chunk|segment|seg_|\.m4s|\.ts|\/video\/|\/audio\/)/.test(normalized));
 }
 
 function isLikelyStreamingMediaUrl(url) {

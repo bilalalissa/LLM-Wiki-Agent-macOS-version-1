@@ -1249,6 +1249,8 @@ function renderHtml() {
     let filesCache = [];
     let archivesCache = [];
     let topicsCache = [];
+    let sideTopicsLoaded = false;
+    let sideTopicsLoading = false;
     const tableSort = {
       files: { key: "processedAtMs", dir: "desc" },
       archives: { key: "archivedAtMs", dir: "desc" },
@@ -1308,7 +1310,10 @@ function renderHtml() {
         document.querySelector("#" + tab.dataset.tab + "-panel").classList.add("active");
         if (tab.dataset.tab === "files") loadFiles();
         if (tab.dataset.tab === "archives") loadArchives();
-        if (tab.dataset.tab === "topics") loadTopics();
+        if (tab.dataset.tab === "topics") {
+          loadTopics();
+          ensureSideTopicsLoaded();
+        }
         if (tab.dataset.tab === "provider") loadProviderStatus();
         if (tab.dataset.tab === "notes") loadNotes();
       });
@@ -1371,11 +1376,16 @@ function renderHtml() {
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
-    sideTopicSearch.addEventListener("input", renderSideTopics);
-    sideTopicType.addEventListener("change", renderSideTopics);
-    sideTopicTag.addEventListener("input", renderSideTopics);
-    sideTopicFrom.addEventListener("change", renderSideTopics);
-    sideTopicTo.addEventListener("change", renderSideTopics);
+    sideTopicSearch.addEventListener("focus", ensureSideTopicsLoaded);
+    sideTopicSearch.addEventListener("input", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
+    sideTopicType.addEventListener("focus", ensureSideTopicsLoaded);
+    sideTopicType.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
+    sideTopicTag.addEventListener("focus", ensureSideTopicsLoaded);
+    sideTopicTag.addEventListener("input", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
+    sideTopicFrom.addEventListener("focus", ensureSideTopicsLoaded);
+    sideTopicFrom.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
+    sideTopicTo.addEventListener("focus", ensureSideTopicsLoaded);
+    sideTopicTo.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
     sideTopicClear.addEventListener("click", () => {
       sideTopicSearch.value = "";
       sideTopicType.value = "";
@@ -1953,15 +1963,26 @@ function renderHtml() {
     }
 
     async function loadSideTopics() {
+      sideTopicsLoading = true;
       try {
         const response = await fetch("/api/topics");
         const data = await response.json();
         sideTopicsCache = (data.topics || []).filter((topic) => !isScaffoldTopic(topic));
+        sideTopicsLoaded = true;
         renderTopicTypeOptions();
         renderSideTopics();
       } catch (error) {
+        sideTopicsLoaded = false;
         topicList.textContent = error.message;
+      } finally {
+        sideTopicsLoading = false;
       }
+    }
+
+    function ensureSideTopicsLoaded() {
+      if (sideTopicsLoaded || sideTopicsLoading) return;
+      topicList.textContent = "Loading topics...";
+      void loadSideTopics();
     }
 
     function renderSideTopics() {
@@ -3104,13 +3125,10 @@ function renderHtml() {
       return Array.from(root.querySelectorAll?.(".note-indicator") || []).filter((node) => range.intersectsNode(node));
     }
 
-    topicList.textContent = "Topics load shortly after startup.";
-    setTimeout(loadSideTopics, 5000);
+    topicList.textContent = "Focus the search box or open Topics to load topics.";
     loadChatVaults();
     loadStatus();
     loadProviderStatus();
-    loadNotes();
-    setInterval(loadSideTopics, 60000);
     setInterval(loadChatVaults, 10000);
     setInterval(loadStatus, 5000);
   </script>

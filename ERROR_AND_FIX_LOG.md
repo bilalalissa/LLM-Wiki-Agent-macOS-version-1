@@ -5,9 +5,17 @@
 - **Area:** `extension/arc-clipper`
 - **Symptom:** `Prepare page media` waited for playback to finish, for a stream end marker, or for an idle timeout before preparing the clip.
 - **Cause:** The popup media path called the playback polling collector before packaging media.
-- **Fix:** The popup media path now collects the current media state once, expands detected HLS/DASH manifests directly from source, and requests discovered segment/chunk URLs immediately.
+- **Fix:** The popup media path now collects the current media state once, inspects detected HLS/DASH manifests directly from source for chunk counts, and sends one clipped content item without uploading chunk files.
 - **Fallback:** If a site does not expose a readable `.m3u8` or `.mpd` manifest, the extension still uses observed media requests and URL-only traceability.
 - **Verification:** `node --check extension/arc-clipper/background.js` and `npm test`.
+
+## 2026-05-31 - Browser Clips Needed User Tags Before Submit
+
+- **Area:** `extension/arc-clipper`, `src/clip.mjs`
+- **Symptom:** Users could review the clip title before submit, but could not add tags to the clipped content.
+- **Cause:** The popup submit flow only forwarded title edits to the prepared clip payload.
+- **Fix:** Added a tags field to the review screen, forwards normalized tags with the single clipped-content payload, and writes tags to Markdown frontmatter plus the source section.
+- **Verification:** `node --check extension/arc-clipper/popup.js`, `node --check extension/arc-clipper/background.js`, `node --check src/clip.mjs`, and `npm test`.
 
 ## 2026-05-31 - macOS App Reinstall Build Race
 
@@ -46,15 +54,15 @@
 - **Area:** `extension/arc-clipper/background.js`
 - **Symptom:** Media capture needed to save user time by requesting stream chunks directly from source instead of waiting for playback to load chunks.
 - **Cause:** Older playback-wait helper code remained in the extension even after the popup path started using manifest expansion.
-- **Fix:** Removed the playback-completion wait helper from the background script, increased manifest expansion capacity for long streams, and improved DASH `SegmentTemplate` expansion from manifest duration metadata.
+- **Fix:** Removed the playback-completion wait helper from the background script. Stream manifests are inspected directly from source and summarized into one clipped markdown source instead of uploading chunks.
 - **Verification:** `node --check extension/arc-clipper/background.js` and `npm test`.
 
 ## 2026-05-31 - Stream Capture Saved Only The First Chunk Window
 
 - **Area:** `extension/arc-clipper/background.js`, `src/clip.mjs`
 - **Symptom:** Faster media capture downloaded some stream chunks and then treated that partial set as the full media.
-- **Cause:** HLS segment detection skipped `.ts` and extensionless manifest segment lines, and the local agent truncated incoming media lists to the first 400 items before saving stream packages.
-- **Fix:** HLS media playlists now include every manifest segment line, stream detection includes `.ts` and CMAF segment extensions, manifest-expanded chunks download in parallel, and the agent saves the full media list it receives.
+- **Cause:** The initial direct-manifest implementation still treated stream chunks as media payload entries.
+- **Fix:** HLS/DASH manifests are now inspected for chunk counts only. The extension sends one clipped content item with manifest metadata, and the agent summarizes any received stream references without writing stream chunk assets.
 - **Verification:** `node --check extension/arc-clipper/background.js`, `node --check src/clip.mjs`, and `npm test`.
 
 ## 2026-05-31 - Startup Media Reprocessing Could Block Local API
@@ -62,5 +70,5 @@
 - **Area:** `src/ingest-lib.mjs`
 - **Symptom:** After reinstalling, the server listened on port `8789` but `/api/status` could time out while startup ingest inspected existing media source pages.
 - **Cause:** pending media reprocessing scanned existing wiki source pages as part of normal auto-ingest.
-- **Fix:** normal auto-ingest now processes new raw candidates only; pending media reprocessing is opt-in with `LLM_WIKI_REPROCESS_PENDING_MEDIA=1`, ingest loops yield between files, and the expensive sidebar topic scan is delayed after startup and refreshed less often.
+- **Fix:** normal auto-ingest now processes new raw candidates only; pending media reprocessing is opt-in with `LLM_WIKI_REPROCESS_PENDING_MEDIA=1`, ingest loops yield between files, and expensive sidebar topic and notes scans are lazy instead of startup work.
 - **Verification:** `/api/status` after reinstall.

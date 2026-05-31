@@ -9,6 +9,7 @@ const progressLabel = document.querySelector("#progress-label");
 const progressPercent = document.querySelector("#progress-percent");
 const preview = document.querySelector("#preview");
 const previewTitleInput = document.querySelector("#preview-title");
+const previewTagsInput = document.querySelector("#preview-tags");
 const mediaList = document.querySelector("#media-list");
 const submitButton = document.querySelector("#submit");
 
@@ -97,7 +98,10 @@ function submitPrepared() {
   setStatus("Submitting to vault...");
   chrome.runtime.sendMessage({
     type: "submitPreparedClip",
-    updates: { title: previewTitleInput.value }
+    updates: {
+      title: previewTitleInput.value,
+      tags: previewTagsInput.value
+    }
   }, (response) => {
     if (chrome.runtime.lastError) {
       fail(chrome.runtime.lastError.message);
@@ -116,6 +120,7 @@ function submitPrepared() {
 function renderPreview(result) {
   document.querySelector("#preview-type").textContent = result.captureType || "";
   previewTitleInput.value = result.title || "";
+  previewTagsInput.value = Array.isArray(result.tags) ? result.tags.join(", ") : "";
   document.querySelector("#preview-text").textContent = `${result.textLength || 0} characters`;
   const summary = result.summary || {};
   document.querySelector("#preview-media-summary").textContent =
@@ -125,13 +130,12 @@ function renderPreview(result) {
   const streamItems = mediaItems.filter(isStreamChunkMedia);
   const visibleItems = mediaItems.filter((media) => !isStreamChunkMedia(media));
   if (streamItems.length >= 3) {
-    const downloaded = streamItems.filter((media) => media.dataUrl || media.downloadStatus === "downloaded").length;
     const item = document.createElement("li");
-    item.className = downloaded ? "downloaded" : "url-only";
+    item.className = "url-only";
     item.innerHTML = `
-      <strong>Browser video/audio stream package</strong>
-      <span>stream · ${downloaded}/${streamItems.length} parts downloaded</span>
-      <small>Stream chunks will be saved as one hidden package, not as separate wiki topics or file rows.</small>
+      <strong>Browser video/audio stream reference</strong>
+      <span>stream · ${streamItems.length} source parts detected</span>
+      <small>Stream chunks are summarized in this clip and are not sent to the agent or saved into vault assets.</small>
     `;
     mediaList.append(item);
   } else {

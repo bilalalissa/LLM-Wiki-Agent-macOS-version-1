@@ -11,6 +11,7 @@ export async function saveBrowserClip(config, payload) {
   const captureType = normalizeCaptureType(payload?.captureType);
   const now = new Date();
   const title = cleanText(payload?.title || payload?.url || `${captureType} clip`, 160) || `${captureType} clip`;
+  const tags = normalizeTags(payload?.tags);
   const stamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const file = uniquePath(path.join(
     vaultPath,
@@ -24,6 +25,7 @@ export async function saveBrowserClip(config, payload) {
     payload: payload || {},
     captureType,
     title,
+    tags,
     now,
     savedMedia
   }), "utf8");
@@ -47,10 +49,11 @@ function normalizeCaptureType(value) {
   return new Set(["selection", "page", "media"]).has(text) ? text : "page";
 }
 
-function renderClipMarkdown({ payload, captureType, title, now, savedMedia }) {
+function renderClipMarkdown({ payload, captureType, title, tags, now, savedMedia }) {
   const url = cleanText(payload.url || "", 2000);
   const text = cleanText(payload.text || "", maxTextChars);
   const html = cleanText(payload.html || "", maxHtmlChars);
+  const frontmatterTags = [...new Set(["browser-clip", ...tags])];
   const lines = [
     "---",
     "type: browser-clip",
@@ -59,6 +62,8 @@ function renderClipMarkdown({ payload, captureType, title, now, savedMedia }) {
     `created: ${now.toISOString()}`,
     url ? `url: ${quoteYaml(url)}` : "url: \"\"",
     `title: ${quoteYaml(title)}`,
+    "tags:",
+    ...frontmatterTags.map((tag) => `  - ${quoteYaml(tag)}`),
     "---",
     "",
     `# Browser clip - ${title}`,
@@ -67,6 +72,7 @@ function renderClipMarkdown({ payload, captureType, title, now, savedMedia }) {
     url ? `- URL: ${url}` : "- URL: none",
     `- Captured: ${now.toISOString()}`,
     `- Capture type: ${captureType}`,
+    tags.length ? `- Tags: ${tags.map((tag) => `#${tag}`).join(", ")}` : "- Tags: none",
     "",
     "## Content",
     "",
@@ -77,12 +83,10 @@ function renderClipMarkdown({ payload, captureType, title, now, savedMedia }) {
   if (savedMedia.length) {
     lines.push("## Media", "");
     for (const media of savedMedia) {
-      if (media.kind === "stream-package") {
+      if (media.kind === "stream-reference") {
         lines.push(`- ${media.label}`);
-        lines.push(`  - Stream parts detected: ${media.count}`);
-        lines.push(`  - Stream parts saved: ${media.downloaded}`);
-        if (media.failed) lines.push(`  - Stream parts not saved: ${media.failed}`);
-        lines.push(`  - Package manifest: \`${media.path}\``);
+        lines.push(`  - Stream references received: ${media.count}`);
+        lines.push("  - Stream chunks were not saved to vault assets.");
       } else if (media.path) {
         lines.push(`- ${media.label}`);
         lines.push(`![[${media.path}]]`);
@@ -119,7 +123,12 @@ async function saveClipMedia(vaultPath, mediaList, stamp) {
   const regularItems = items.filter((item) => !isStreamChunkMedia(item));
   const saved = [];
   if (streamItems.length >= 3) {
-    saved.push(await saveStreamPackage(vaultPath, streamItems, stamp));
+    saved.push({
+      label: "Browser video/audio stream reference",
+      kind: "stream-reference",
+      count: streamItems.length,
+      downloaded: 0
+    });
   } else {
     regularItems.unshift(...streamItems);
   }
@@ -146,46 +155,6 @@ async function saveClipMedia(vaultPath, mediaList, stamp) {
     if (sourceUrl) saved.push({ label, url: sourceUrl, sourceUrl });
   }
   return saved;
-}
-
-async function saveStreamPackage(vaultPath, items, stamp) {
-  const dir = path.join(vaultPath, "raw", "assets", "browser-clips", `${stamp}--stream-package`);
-  ensureDir(dir);
-  const saved = [];
-  for (const [index, media] of items.entries()) {
-    const label = cleanText(media?.alt || media?.title || media?.filename || media?.url || `stream part ${index + 1}`, 140) || `stream part ${index + 1}`;
-    const sourceUrl = cleanText(media?.url || media?.src || "", 2000);
-    const dataUrl = String(media?.dataUrl || "");
-    try {
-      if (dataUrl.startsWith("data:")) {
-        saved.push(saveDataUrlAssetInDir(dir, vaultPath, dataUrl, stamp, index, label, sourceUrl));
-      } else if (sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
-        saved.push(await downloadUrlAssetInDir(dir, vaultPath, sourceUrl, stamp, index, label));
-      } else if (sourceUrl) {
-        saved.push({ label, sourceUrl, path: "" });
-      }
-    } catch (error) {
-      saved.push({ label, sourceUrl, path: "", error: error.message });
-    }
-  }
-  const manifest = {
-    kind: "browser-stream-package",
-    created: new Date().toISOString(),
-    parts: saved
-  };
-  const manifestFile = path.join(dir, "stream-manifest.json");
-  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2), "utf8");
-  const downloaded = saved.filter((item) => item.path).length;
-  return {
-    label: "Browser video/audio stream package",
-    kind: "stream-package",
-    path: relativeVaultPath(vaultPath, manifestFile),
-    url: "",
-    sourceUrl: "",
-    count: items.length,
-    downloaded,
-    failed: saved.filter((item) => item.error).length
-  };
 }
 
 async function downloadUrlAsset(vaultPath, sourceUrl, stamp, index, label) {
@@ -292,6 +261,25 @@ function relativeVaultPath(vaultPath, file) {
 function cleanText(value, maxChars) {
   const text = String(value || "").replace(/\u0000/g, "").trim();
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n\n[Content truncated during browser export.]` : text;
+}
+
+function normalizeTags(value) {
+  const raw = Array.isArray(value) ? value : String(value || "").split(/[,\n]/);
+  const seen = new Set();
+  const tags = [];
+  for (const item of raw) {
+    const tag = String(item || "")
+      .trim()
+      .replace(/^#+/, "")
+      .replace(/\s+/g, "-")
+      .replace(/[^A-Za-z0-9/_-]/g, "")
+      .replace(/^\/+|\/+$/g, "")
+      .slice(0, 64);
+    if (!tag || seen.has(tag.toLowerCase())) continue;
+    seen.add(tag.toLowerCase());
+    tags.push(tag);
+  }
+  return tags;
 }
 
 function quoteYaml(value) {

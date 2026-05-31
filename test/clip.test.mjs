@@ -31,13 +31,16 @@ test("browser clips are saved as raw input markdown", async () => {
     captureType: "selection",
     title: "Interesting page",
     url: "https://example.test/article",
-    text: "Selected insight for the wiki."
+    text: "Selected insight for the wiki.",
+    tags: ["#Research", "meeting notes", "ai/agents", "Research", "bad tag!"]
   });
 
   assert.equal(result.vault, "Research-vault");
   assert.match(result.file, /^raw\/input\/.*browser--selection--interesting-page\.md$/);
   const markdown = fs.readFileSync(path.join(vault, result.file), "utf8");
   assert.match(markdown, /type: browser-clip/);
+  assert.match(markdown, /tags:\n  - "browser-clip"\n  - "Research"\n  - "meeting-notes"\n  - "ai\/agents"\n  - "bad-tag"/);
+  assert.match(markdown, /- Tags: #Research, #meeting-notes, #ai\/agents, #bad-tag/);
   assert.match(markdown, /Selected insight for the wiki\./);
 });
 
@@ -90,7 +93,7 @@ test("browser clip media URLs are downloaded as vault assets when possible", asy
   }
 });
 
-test("browser stream chunks are saved as one package entry", async () => {
+test("browser stream chunks are summarized without saving chunk assets", async () => {
   const { root, vault } = makeVaultRoot();
   const dataUrl = `data:video/mp4;base64,${Buffer.from("chunk").toString("base64")}`;
 
@@ -108,16 +111,14 @@ test("browser stream chunks are saved as one package entry", async () => {
     ]
   });
 
-  assert.equal(result.assets.length, 1);
-  assert.match(result.assets[0], /^raw\/assets\/browser-clips\/.*--stream-package\/stream-manifest\.json$/);
+  assert.equal(result.assets.length, 0);
   const markdown = fs.readFileSync(path.join(vault, result.file), "utf8");
-  assert.match(markdown, /Browser video\/audio stream package/);
+  assert.match(markdown, /Browser video\/audio stream reference/);
+  assert.match(markdown, /Stream chunks were not saved to vault assets/);
   assert.doesNotMatch(markdown, /!\[\[raw\/assets\/browser-clips\/.*seg_1/);
-  const manifest = JSON.parse(fs.readFileSync(path.join(vault, result.assets[0]), "utf8"));
-  assert.equal(manifest.parts.filter((item) => item.path).length, 4);
 });
 
-test("browser stream package keeps more than 400 manifest chunks", async () => {
+test("browser stream summary handles more than 400 manifest chunks without assets", async () => {
   const { root, vault } = makeVaultRoot();
   const dataUrl = `data:video/mp2t;base64,${Buffer.from("chunk").toString("base64")}`;
   const media = Array.from({ length: 425 }, (_item, index) => ({
@@ -135,7 +136,8 @@ test("browser stream package keeps more than 400 manifest chunks", async () => {
     media
   });
 
-  const manifest = JSON.parse(fs.readFileSync(path.join(vault, result.assets[0]), "utf8"));
-  assert.equal(manifest.parts.length, 425);
-  assert.equal(manifest.parts.filter((item) => item.path).length, 425);
+  assert.equal(result.assets.length, 0);
+  const markdown = fs.readFileSync(path.join(vault, result.file), "utf8");
+  assert.match(markdown, /Stream references received: 425/);
+  assert.doesNotMatch(markdown, /stream-manifest\.json/);
 });
