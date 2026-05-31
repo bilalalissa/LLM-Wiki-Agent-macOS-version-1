@@ -254,11 +254,20 @@ function rememberMediaUrls(urls) {
     next.push(url);
   }
   if (!next.length) return;
-  chrome.runtime.sendMessage({
+  sendRuntimeMessage({
     type: "llmwiki:observed-media",
     pageURL: location.href,
     mediaURLs: next
-  }).catch?.(() => {});
+  });
+}
+
+function sendRuntimeMessage(message) {
+  try {
+    if (typeof chrome === "undefined" || !chrome.runtime?.id) return;
+    chrome.runtime.sendMessage(message).catch?.(() => {});
+  } catch {
+    // Existing page scripts can outlive an unpacked extension reload.
+  }
 }
 
 function scanMediaElements() {

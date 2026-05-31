@@ -16,3 +16,11 @@
 - **Likely cause:** The repo is inside iCloud Drive, so file syncing can race SwiftPM/Xcode source reads.
 - **Fix:** Retried the install after the file state settled.
 - **Verification:** Second `./scripts/install_macos_app.sh` run built and installed `/Applications/LLM Wiki Agent.app`.
+
+## 2026-05-31 - Arc Extension Reload Invalidated Existing Content Script
+
+- **Area:** `extension/arc-clipper/content.js`
+- **Symptom:** Arc extension errors showed `Uncaught Error: Extension context invalidated` at `chrome.runtime.sendMessage` after reloading the unpacked extension on an already-open YouTube tab.
+- **Cause:** The previous content script instance kept running after Arc invalidated the old extension context.
+- **Fix:** Observed-media messages now go through a guarded runtime sender that silently skips sends when the extension context has been invalidated.
+- **Verification:** `node --check extension/arc-clipper/content.js`.
