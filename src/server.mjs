@@ -1366,6 +1366,7 @@ function renderHtml() {
     let topicsCache = [];
     let sideTopicsLoaded = false;
     let sideTopicsLoading = false;
+    let sideTopicsUpdatedAt = "";
     const tableSelection = {
       files: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" },
       archives: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" }
@@ -1519,6 +1520,7 @@ function renderHtml() {
     chooseConfigFile.addEventListener("click", chooseConfigPathValue);
     openConfigFile.addEventListener("click", openConfigPathValue);
     refreshNotes.addEventListener("click", loadNotes);
+    setInterval(refreshSideTopicsIfStale, 7000);
     filesFilter.addEventListener("input", renderFilesTable);
     filesVaultFilter.addEventListener("change", renderFilesTable);
     filesStatusFilter.addEventListener("change", renderFilesTable);
@@ -2111,6 +2113,9 @@ function renderHtml() {
         populateSelect(topicsVaultFilter, topicsCache.map((topic) => topic.vault), "All vaults");
         populateSelect(topicsTypeFilter, topicsCache.map((topic) => topic.type), "All types");
         renderTopicsTable();
+        if (sideTopicsLoaded && data.updatedAt && data.updatedAt !== sideTopicsUpdatedAt) {
+          applySideTopicsPayload(data);
+        }
       } catch (error) {
         topicsBody.innerHTML = '<tr><td colspan="7">' + escapeHtml(error.message) + '</td></tr>';
       }
@@ -2258,6 +2263,7 @@ function renderHtml() {
     }
 
     async function loadSideTopics() {
+      if (sideTopicsLoading) return;
       sideTopicsLoading = true;
       try {
         const response = await fetch("/api/topics");
@@ -2268,10 +2274,7 @@ function renderHtml() {
           return;
         }
         if (data.error) throw new Error(data.error);
-        sideTopicsCache = (data.topics || []).filter((topic) => !isScaffoldTopic(topic));
-        sideTopicsLoaded = true;
-        renderTopicTypeOptions();
-        renderSideTopics();
+        applySideTopicsPayload(data);
       } catch (error) {
         sideTopicsLoaded = false;
         topicList.textContent = error.message;
@@ -2284,6 +2287,27 @@ function renderHtml() {
       if (sideTopicsLoaded || sideTopicsLoading) return;
       topicList.textContent = "Loading topics...";
       void loadSideTopics();
+    }
+
+    async function refreshSideTopicsIfStale() {
+      if (!sideTopicsLoaded || sideTopicsLoading) return;
+      try {
+        const response = await fetch("/api/topics");
+        const data = await response.json();
+        if (data.error || (data.loading && !(data.topics || []).length)) return;
+        if (!data.updatedAt || data.updatedAt === sideTopicsUpdatedAt) return;
+        applySideTopicsPayload(data);
+      } catch {
+        // Keep the existing sidebar contents during transient refresh failures.
+      }
+    }
+
+    function applySideTopicsPayload(data) {
+      sideTopicsCache = (data.topics || []).filter((topic) => !isScaffoldTopic(topic));
+      sideTopicsLoaded = true;
+      sideTopicsUpdatedAt = data.updatedAt || new Date().toISOString();
+      renderTopicTypeOptions();
+      renderSideTopics();
     }
 
     function renderSideTopics() {

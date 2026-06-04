@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-04 - Topics Sidebar Did Not Refresh After New Topics
+
+- **Area:** `src/server.mjs`
+- **Symptom:** `Topics & Insights` search sidebar could keep showing the first loaded topic list and miss newly ingested topics until the app/page was manually reloaded.
+- **Cause:** The sidebar used a lazy `sideTopicsLoaded` flag and never invalidated or reloaded its local topic cache after `/api/topics` refreshed.
+- **Fix:** The sidebar now tracks the `/api/topics` `updatedAt` timestamp, refreshes from the server every few seconds after it has been opened, and re-renders automatically when the topic cache timestamp changes. The Topics tab also synchronizes the sidebar cache when it loads newer topic data.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML verification for `refreshSideTopicsIfStale`.
+
 ## 2026-05-31 - Large YouTube Clips Needed Preflight Options
 
 - **Area:** `src/clip.mjs`, `src/server.mjs`, `extension/arc-clipper`
