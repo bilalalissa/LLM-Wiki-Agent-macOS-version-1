@@ -972,6 +972,9 @@ function renderHtml() {
     .side-topic-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
     .side-topic-filters select, .side-topic-filters input { width: 100%; min-width: 0; box-sizing: border-box; padding: 7px; font-size: 13px; }
     .side-topic-filters .wide { grid-column: 1 / -1; }
+    .side-topic-sort { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
+    .side-topic-sort button { border: 1px solid var(--line); background: var(--panel); text-align: center; padding: 6px 4px; font-size: 12px; font-weight: 700; }
+    .side-topic-sort button.active { border-color: var(--accent); background: var(--soft); color: var(--accent); }
     .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
     #topic-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 10px; }
     .side-topics button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
@@ -1236,6 +1239,12 @@ function renderHtml() {
         <input id="side-topic-from" type="date" title="Updated from">
         <input id="side-topic-to" type="date" title="Updated to">
       </div>
+      <div class="side-topic-sort" aria-label="Sort topics">
+        <button class="active" type="button" data-sort="date-desc" title="Newest first">Date ↓</button>
+        <button type="button" data-sort="date-asc" title="Oldest first">Date ↑</button>
+        <button type="button" data-sort="alpha-asc" title="A to Z">A-Z</button>
+        <button type="button" data-sort="alpha-desc" title="Z to A">Z-A</button>
+      </div>
     </div>
     <div id="topic-list" class="muted">Loading...</div>
   </aside>
@@ -1336,6 +1345,7 @@ function renderHtml() {
     const sideTopicTag = document.querySelector("#side-topic-tag");
     const sideTopicFrom = document.querySelector("#side-topic-from");
     const sideTopicTo = document.querySelector("#side-topic-to");
+    const sideTopicSortButtons = document.querySelectorAll(".side-topic-sort button");
     const statusEl = document.querySelector("#status");
     const themeSelect = document.querySelector("#theme-select");
     const openObsidianButton = document.querySelector("#open-obsidian");
@@ -1367,6 +1377,7 @@ function renderHtml() {
     let sideTopicsLoaded = false;
     let sideTopicsLoading = false;
     let sideTopicsUpdatedAt = "";
+    let sideTopicSortMode = localStorage.getItem("llm-wiki-side-topic-sort") || "date-desc";
     const tableSelection = {
       files: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" },
       archives: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" }
@@ -1506,6 +1517,16 @@ function renderHtml() {
     sideTopicFrom.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
     sideTopicTo.addEventListener("focus", ensureSideTopicsLoaded);
     sideTopicTo.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
+    sideTopicSortButtons.forEach((button) => {
+      button.classList.toggle("active", button.dataset.sort === sideTopicSortMode);
+      button.addEventListener("click", () => {
+        sideTopicSortMode = button.dataset.sort || "date-desc";
+        localStorage.setItem("llm-wiki-side-topic-sort", sideTopicSortMode);
+        sideTopicSortButtons.forEach((item) => item.classList.toggle("active", item === button));
+        ensureSideTopicsLoaded();
+        renderSideTopics();
+      });
+    });
     sideTopicClear.addEventListener("click", () => {
       sideTopicSearch.value = "";
       sideTopicType.value = "";
@@ -2357,10 +2378,22 @@ function renderHtml() {
         const vaultText = vaults.length > 1 ? " | " + vaults.length + " vaults" : vaults[0] ? " | " + vaults[0] : "";
         return {
           topic,
+          updated,
           meta: (types[0] || "topic") + (updated ? " | " + updated : "") + duplicateText + vaultText,
           title: items.map((item) => [item.vault, item.type, item.path].filter(Boolean).join(" | ")).join("\\n")
         };
-      }).sort((a, b) => a.topic.title.localeCompare(b.topic.title));
+      }).sort(compareSideTopicGroups);
+    }
+
+    function compareSideTopicGroups(a, b) {
+      if (sideTopicSortMode === "alpha-desc") return b.topic.title.localeCompare(a.topic.title);
+      if (sideTopicSortMode === "alpha-asc") return a.topic.title.localeCompare(b.topic.title);
+      if (sideTopicSortMode === "date-asc") {
+        return String(a.updated || "").localeCompare(String(b.updated || "")) ||
+          a.topic.title.localeCompare(b.topic.title);
+      }
+      return String(b.updated || "").localeCompare(String(a.updated || "")) ||
+        a.topic.title.localeCompare(b.topic.title);
     }
 
     function normalizeTopicTitle(title) {

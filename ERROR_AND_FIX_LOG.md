@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Topics Sidebar Needed Sort Controls
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The `Topics & Insights` sidebar could search and filter topics, but users could not sort results by newest/oldest date or alphabetically.
+- **Cause:** Sidebar rendering always grouped topics with a fixed title sort and had no user-facing sort state.
+- **Fix:** Added `Date ↓`, `Date ↑`, `A-Z`, and `Z-A` sort buttons, persisted the selected sort mode in `localStorage`, and sorted grouped topic results by latest update date or title.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML check for the new sidebar sort controls.
+
 ## 2026-06-16 - Saving Notes Removed In-Page Highlights
 
 - **Area:** `src/server.mjs`
