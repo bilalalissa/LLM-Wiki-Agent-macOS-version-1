@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Files Export Needed User-Chosen Download Location
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The Files tab download/export flow saved through the WebView/browser download path, so users could not choose the destination folder from a native download window.
+- **Cause:** The client generated a Blob URL and clicked a temporary download link, which bypassed a macOS save dialog in the installed app.
+- **Fix:** Files export now writes through the app backend. `Download...` opens a macOS save-location dialog for the currently selected format, and `Export...` first asks for Markdown or plain text before opening the same save-location dialog.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, served UI checks for `Download...`/`Export...`, and a backend export write to `/tmp/llm-wiki-agent-export-test.md`.
+
 ## 2026-06-16 - Files Needed Export/Save And Local Sections Needed Copy Actions
 
 - **Area:** `src/server.mjs`

@@ -151,7 +151,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readBody(request);
       const payload = JSON.parse(body || "{}");
-      const result = exportSelectedFiles(config, payload);
+      const result = await exportSelectedFiles(config, payload);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(result));
     } catch (error) {
@@ -688,7 +688,7 @@ function resolveVaultMedia(config, vault, file) {
   return { file: full, contentType: mediaContentType(full) };
 }
 
-function exportSelectedFiles(config, payload) {
+async function exportSelectedFiles(config, payload) {
   const sources = Array.isArray(payload.sources) ? payload.sources : [];
   if (!sources.length) throw new Error("Select at least one file first.");
   const format = payload.format === "text" ? "text" : "markdown";
@@ -698,7 +698,20 @@ function exportSelectedFiles(config, payload) {
   const content = format === "text" ? renderFilesExportText(entries) : renderFilesExportMarkdown(entries);
   const extension = format === "text" ? "txt" : "md";
   const filename = `${dateStamp()}--selected-files-export.${extension}`;
-  if (action !== "save") return { filename, content, count: entries.length };
+  if (action !== "save") {
+    const chosenPath = payload.destination
+      ? path.resolve(String(payload.destination))
+      : await chooseExportDestination(filename);
+    if (!chosenPath) return { cancelled: true, filename, count: entries.length };
+    fs.mkdirSync(path.dirname(chosenPath), { recursive: true });
+    fs.writeFileSync(chosenPath, content, "utf8");
+    return {
+      filename: path.basename(chosenPath),
+      savedFile: chosenPath,
+      content,
+      count: entries.length
+    };
+  }
   const firstVault = vaults.get(entries[0].vault);
   if (!firstVault) throw new Error("Unknown vault.");
   const exportDir = path.join(firstVault, "raw", "exports");
@@ -821,6 +834,22 @@ function uniqueExportFile(dir, filename) {
 
 function dateStamp() {
   return new Date().toISOString().slice(0, 10);
+}
+
+async function chooseExportDestination(defaultName) {
+  try {
+    return await runOsascript([
+      `set chosenFile to choose file name with prompt "Choose where to save the selected file export" default name "${appleScriptString(defaultName)}"`,
+      "POSIX path of chosenFile"
+    ]);
+  } catch (error) {
+    if (/User canceled/i.test(error.message)) return "";
+    throw error;
+  }
+}
+
+function appleScriptString(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function resolveHelpMedia(file) {
@@ -1324,8 +1353,8 @@ function renderHtml() {
             <option value="text">Plain text</option>
             <option value="markdown">Markdown</option>
           </select>
-          <button id="export-selected-files" class="secondary" type="button">Download export</button>
-          <button id="save-selected-files-export" class="secondary" type="button">Save export</button>
+          <button id="export-selected-files" class="secondary" type="button">Download...</button>
+          <button id="save-selected-files-export" class="secondary" type="button">Export...</button>
           <span id="rename-source-feedback" class="copy-feedback"></span>
           <span id="merge-sources-feedback" class="copy-feedback"></span>
           <span id="delete-sources-feedback" class="copy-feedback"></span>
@@ -1742,8 +1771,11 @@ function renderHtml() {
     renameSourceButton.addEventListener("click", renameSelectedSource);
     mergeSourcesButton.addEventListener("click", mergeSelectedSources);
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
-    exportSelectedFilesButton.addEventListener("click", () => exportSelectedFiles("download"));
-    saveSelectedFilesExportButton.addEventListener("click", () => exportSelectedFiles("save"));
+    exportSelectedFilesButton.addEventListener("click", () => exportSelectedFiles("download", filesExportFormat.value));
+    saveSelectedFilesExportButton.addEventListener("click", () => {
+      const format = chooseFilesExportFormat();
+      if (format) exportSelectedFiles("download", format);
+    });
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
     const savedSideTopicHidden = localStorage.getItem("llm-wiki-side-topic-hidden") === "1";
@@ -2054,7 +2086,24 @@ function renderHtml() {
       }
     }
 
-    async function exportSelectedFiles(action) {
+    function chooseFilesExportFormat() {
+      const choice = window.prompt("Export selected files as Markdown or plain text? Type md or text.", filesExportFormat.value === "text" ? "text" : "md");
+      if (choice === null) return "";
+      const normalized = choice.trim().toLowerCase();
+      if (["md", "markdown"].includes(normalized)) {
+        filesExportFormat.value = "markdown";
+        return "markdown";
+      }
+      if (["txt", "text", "plain", "plain text"].includes(normalized)) {
+        filesExportFormat.value = "text";
+        return "text";
+      }
+      filesExportFeedback.textContent = "Use md or text";
+      setTimeout(() => { filesExportFeedback.textContent = ""; }, 1800);
+      return "";
+    }
+
+    async function exportSelectedFiles(action, format) {
       const selected = selectedSourceItems();
       if (!selected.length) {
         filesExportFeedback.textContent = "Select files first";
@@ -2063,22 +2112,23 @@ function renderHtml() {
       }
       const buttons = [exportSelectedFilesButton, saveSelectedFilesExportButton];
       buttons.forEach((item) => { item.disabled = true; });
-      filesExportFeedback.textContent = action === "save" ? "Saving..." : "Preparing...";
+      filesExportFeedback.textContent = "Choose save location...";
       try {
         const response = await fetch("/api/export-files", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             sources: selected,
-            format: filesExportFormat.value,
+            format: format || filesExportFormat.value,
             action
           })
         });
         const data = await response.json();
         if (!response.ok || data.error) throw new Error(data.error || "Export failed.");
-        if (action === "download") {
-          downloadTextFile(data.filename, data.content, filesExportFormat.value === "text" ? "text/plain" : "text/markdown");
-          filesExportFeedback.textContent = "Downloaded " + data.count + " file" + (data.count === 1 ? "" : "s");
+        if (data.cancelled) {
+          filesExportFeedback.textContent = "Export cancelled";
+        } else if (action === "download") {
+          filesExportFeedback.textContent = "Saved to " + data.savedFile;
         } else {
           filesExportFeedback.textContent = "Saved to " + data.vault + "/" + data.savedFile;
           loadFiles();
@@ -2089,18 +2139,6 @@ function renderHtml() {
         buttons.forEach((item) => { item.disabled = false; });
         setTimeout(() => { filesExportFeedback.textContent = ""; }, 4200);
       }
-    }
-
-    function downloadTextFile(filename, content, type) {
-      const blob = new Blob([content || ""], { type: type + ";charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename || "selected-files-export.md";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     function selectedSourceItems() {
