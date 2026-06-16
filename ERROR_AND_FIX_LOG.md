@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Notes Were Intermittent Across Save, List, And Annotation
+
+- **Area:** `src/server.mjs`, `src/tab-data-worker.mjs`
+- **Symptom:** Adding a note sometimes worked and sometimes did not, the Notes tab could stay empty after a loading message, and saved notes sometimes did not appear on the source text.
+- **Cause:** The Notes tab worker only scanned `wiki/questions/agent-ui-notes.md`, while notes can be saved into the selected source file. `/api/notes` also depended on worker cache timing, and repeated selections could include existing note indicators in the selected text.
+- **Fix:** `/api/notes` now refreshes from the full note scanner before responding, the worker uses the same full scanner, and selected note text is extracted from a cleaned clone with note indicators removed.
+- **Verification:** `node --check src/server.mjs`, `node --check src/tab-data-worker.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML/API checks.
+
 ## 2026-06-16 - Tab Changes Could Hide Notes Or Remove Highlights
 
 - **Area:** `src/server.mjs`

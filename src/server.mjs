@@ -342,6 +342,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "GET" && url.pathname === "/api/notes") {
+    refreshNotesCache();
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(cachedTabPayload("notes")));
     return;
@@ -3688,7 +3689,7 @@ function renderHtml() {
     }
 
     function selectionText(selection) {
-      return selection.toString().replace(/\s+/g, " ").trim();
+      return selectionClone(selection).textContent.replace(/\\s+/g, " ").trim();
     }
 
     function htmlToMarkdown(html) {
