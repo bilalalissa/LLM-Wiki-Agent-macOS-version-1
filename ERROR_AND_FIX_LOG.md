@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Files Needed Export/Save And Local Sections Needed Copy Actions
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Selected rows in the Files tab could only be renamed, merged, or archived, and Local search topics/sections only supported copying the full result.
+- **Cause:** There was no export endpoint for selected file rows and no per-section copy controls in rendered Local search results.
+- **Fix:** Added `/api/export-files` with plain text and Markdown output, direct download, and no-overwrite vault save under `raw/exports/`. Local search result and nested section headers now include compact `Txt` and `MD` copy buttons that copy the chosen title plus content.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, served HTML checks for export/local copy controls, empty-selection `/api/export-files` validation, and a positive one-file Markdown export probe.
+
 ## 2026-06-16 - Sidebar Toggle Buttons Overlapped Layout
 
 - **Area:** `src/server.mjs`

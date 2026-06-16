@@ -147,6 +147,20 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/export-files") {
+    try {
+      const body = await readBody(request);
+      const payload = JSON.parse(body || "{}");
+      const result = exportSelectedFiles(config, payload);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(result));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/merge-sources") {
     try {
       const body = await readBody(request);
@@ -674,6 +688,141 @@ function resolveVaultMedia(config, vault, file) {
   return { file: full, contentType: mediaContentType(full) };
 }
 
+function exportSelectedFiles(config, payload) {
+  const sources = Array.isArray(payload.sources) ? payload.sources : [];
+  if (!sources.length) throw new Error("Select at least one file first.");
+  const format = payload.format === "text" ? "text" : "markdown";
+  const action = payload.action === "save" ? "save" : "download";
+  const vaults = new Map(listVaults(config.vaultsRoot).map((vaultPath) => [vaultName(vaultPath), vaultPath]));
+  const entries = sources.map((source) => exportEntryForSource(vaults, source));
+  const content = format === "text" ? renderFilesExportText(entries) : renderFilesExportMarkdown(entries);
+  const extension = format === "text" ? "txt" : "md";
+  const filename = `${dateStamp()}--selected-files-export.${extension}`;
+  if (action !== "save") return { filename, content, count: entries.length };
+  const firstVault = vaults.get(entries[0].vault);
+  if (!firstVault) throw new Error("Unknown vault.");
+  const exportDir = path.join(firstVault, "raw", "exports");
+  fs.mkdirSync(exportDir, { recursive: true });
+  const savedPath = uniqueExportFile(exportDir, filename);
+  fs.writeFileSync(savedPath, content, "utf8");
+  return {
+    filename: path.basename(savedPath),
+    savedFile: path.relative(firstVault, savedPath).replace(/\\/g, "/"),
+    vault: entries[0].vault,
+    content,
+    count: entries.length
+  };
+}
+
+function exportEntryForSource(vaults, source) {
+  const vault = String(source?.vault || "").trim();
+  const vaultPath = vaults.get(vault);
+  if (!vaultPath) throw new Error(`Unknown vault: ${vault || "blank"}.`);
+  const rawFile = source?.file ? safeVaultPath(vaultPath, source.file) : null;
+  const sourcePage = source?.sourcePage ? safeVaultPath(vaultPath, source.sourcePage) : null;
+  const readableFile = sourcePage || rawFile;
+  if (!readableFile || !fs.existsSync(readableFile.full)) {
+    throw new Error(`Selected file was not found in ${vault}.`);
+  }
+  const ext = path.extname(readableFile.full).toLowerCase();
+  const readableText = [".md", ".markdown", ".txt", ".json", ".csv", ".log"].includes(ext);
+  const title = titleForExport(source.sourcePage || source.file);
+  return {
+    vault,
+    title,
+    rawFile: source.file || "",
+    sourcePage: source.sourcePage || "",
+    exportedFile: readableFile.relative,
+    content: readableText ? fs.readFileSync(readableFile.full, "utf8") : "",
+    skippedBinary: !readableText,
+    contentType: readableText ? "text" : mediaContentType(readableFile.full)
+  };
+}
+
+function safeVaultPath(vaultPath, input) {
+  const normalized = String(input || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized || normalized.includes("\0") || normalized.split("/").includes("..")) {
+    throw new Error("Invalid selected file path.");
+  }
+  const root = path.resolve(vaultPath);
+  const full = path.resolve(root, normalized);
+  if (full !== root && !full.startsWith(root + path.sep)) throw new Error("Invalid selected file path.");
+  return { full, relative: normalized };
+}
+
+function renderFilesExportMarkdown(entries) {
+  const chunks = [
+    "# LLM Wiki Agent File Export",
+    "",
+    `Exported: ${new Date().toISOString()}`,
+    `Files: ${entries.length}`,
+    ""
+  ];
+  for (const entry of entries) {
+    chunks.push(`## ${entry.title}`, "");
+    chunks.push(`- Vault: ${entry.vault}`);
+    if (entry.rawFile) chunks.push(`- Raw file: ${entry.rawFile}`);
+    if (entry.sourcePage) chunks.push(`- Source page: ${entry.sourcePage}`);
+    if (entry.skippedBinary) {
+      chunks.push(`- Content: binary file omitted from text export (${entry.contentType})`, "");
+    } else {
+      chunks.push("", entry.content.trim() || "_No readable content._", "");
+    }
+  }
+  return chunks.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+function renderFilesExportText(entries) {
+  const chunks = [
+    "LLM Wiki Agent File Export",
+    `Exported: ${new Date().toISOString()}`,
+    `Files: ${entries.length}`,
+    ""
+  ];
+  for (const entry of entries) {
+    chunks.push(entry.title);
+    chunks.push(`Vault: ${entry.vault}`);
+    if (entry.rawFile) chunks.push(`Raw file: ${entry.rawFile}`);
+    if (entry.sourcePage) chunks.push(`Source page: ${entry.sourcePage}`);
+    chunks.push("");
+    chunks.push(entry.skippedBinary ? `Binary file omitted from text export (${entry.contentType}).` : plainTextFromMarkdown(entry.content));
+    chunks.push("");
+  }
+  return chunks.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+function plainTextFromMarkdown(markdown) {
+  return String(markdown || "")
+    .replace(/^---[\s\S]*?---\s*/m, "")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "- ")
+    .replace(/[*_`~>#]/g, "")
+    .trim();
+}
+
+function titleForExport(value) {
+  const base = path.basename(String(value || "selected-file")).replace(/\.[^.]+$/, "");
+  return base.replace(/^\d{4}-\d{2}-\d{2}--/, "").replace(/[-_]+/g, " ").trim() || "Selected file";
+}
+
+function uniqueExportFile(dir, filename) {
+  const ext = path.extname(filename);
+  const stem = path.basename(filename, ext);
+  let candidate = path.join(dir, filename);
+  let index = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${stem}-${index}${ext}`);
+    index += 1;
+  }
+  return candidate;
+}
+
+function dateStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function resolveHelpMedia(file) {
   const normalized = decodeURIComponent(String(file || ""))
     .replace(/\\/g, "/")
@@ -977,6 +1126,9 @@ function renderHtml() {
     .local-nested-body { padding: 10px 12px; border-top: 1px solid var(--line); overflow: clip; max-width: 100%; box-sizing: border-box; }
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .local-result-title, .local-nested-title { min-width: 0; }
+    .local-section-tools { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; flex: 0 0 auto; }
+    .local-copy-button { font: inherit; font-size: 12px; line-height: 1; min-width: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+    .local-copy-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
     .dir-button { font: inherit; font-size: 11px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 3px 6px; cursor: pointer; }
     .dir-button:hover, .dir-button.active { color: var(--text); border-color: var(--accent); background: var(--soft); }
@@ -1168,9 +1320,16 @@ function renderHtml() {
           <button id="rename-source" class="secondary" type="button">Rename selected source</button>
           <button id="merge-sources" class="secondary" type="button">Merge selected sources</button>
           <button id="delete-sources" class="secondary" type="button">Archive selected sources</button>
+          <select id="files-export-format" aria-label="Selected files export format">
+            <option value="text">Plain text</option>
+            <option value="markdown">Markdown</option>
+          </select>
+          <button id="export-selected-files" class="secondary" type="button">Download export</button>
+          <button id="save-selected-files-export" class="secondary" type="button">Save export</button>
           <span id="rename-source-feedback" class="copy-feedback"></span>
           <span id="merge-sources-feedback" class="copy-feedback"></span>
           <span id="delete-sources-feedback" class="copy-feedback"></span>
+          <span id="files-export-feedback" class="copy-feedback"></span>
         </div>
         <div class="table-controls">
           <input id="files-filter" autocomplete="off" placeholder="Filter files">
@@ -1390,6 +1549,10 @@ function renderHtml() {
     const mergeSourcesFeedback = document.querySelector("#merge-sources-feedback");
     const deleteSourcesButton = document.querySelector("#delete-sources");
     const deleteSourcesFeedback = document.querySelector("#delete-sources-feedback");
+    const filesExportFormat = document.querySelector("#files-export-format");
+    const exportSelectedFilesButton = document.querySelector("#export-selected-files");
+    const saveSelectedFilesExportButton = document.querySelector("#save-selected-files-export");
+    const filesExportFeedback = document.querySelector("#files-export-feedback");
     const deleteArchivesButton = document.querySelector("#delete-archives");
     const deleteArchivesFeedback = document.querySelector("#delete-archives-feedback");
     const restoreArchivesButton = document.querySelector("#restore-archives");
@@ -1579,6 +1742,8 @@ function renderHtml() {
     renameSourceButton.addEventListener("click", renameSelectedSource);
     mergeSourcesButton.addEventListener("click", mergeSelectedSources);
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
+    exportSelectedFilesButton.addEventListener("click", () => exportSelectedFiles("download"));
+    saveSelectedFilesExportButton.addEventListener("click", () => exportSelectedFiles("save"));
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
     const savedSideTopicHidden = localStorage.getItem("llm-wiki-side-topic-hidden") === "1";
@@ -1887,6 +2052,55 @@ function renderHtml() {
         mergeSourcesButton.disabled = false;
         setTimeout(() => { mergeSourcesFeedback.textContent = ""; }, 4200);
       }
+    }
+
+    async function exportSelectedFiles(action) {
+      const selected = selectedSourceItems();
+      if (!selected.length) {
+        filesExportFeedback.textContent = "Select files first";
+        setTimeout(() => { filesExportFeedback.textContent = ""; }, 1600);
+        return;
+      }
+      const buttons = [exportSelectedFilesButton, saveSelectedFilesExportButton];
+      buttons.forEach((item) => { item.disabled = true; });
+      filesExportFeedback.textContent = action === "save" ? "Saving..." : "Preparing...";
+      try {
+        const response = await fetch("/api/export-files", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sources: selected,
+            format: filesExportFormat.value,
+            action
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || "Export failed.");
+        if (action === "download") {
+          downloadTextFile(data.filename, data.content, filesExportFormat.value === "text" ? "text/plain" : "text/markdown");
+          filesExportFeedback.textContent = "Downloaded " + data.count + " file" + (data.count === 1 ? "" : "s");
+        } else {
+          filesExportFeedback.textContent = "Saved to " + data.vault + "/" + data.savedFile;
+          loadFiles();
+        }
+      } catch (error) {
+        filesExportFeedback.textContent = error.message;
+      } finally {
+        buttons.forEach((item) => { item.disabled = false; });
+        setTimeout(() => { filesExportFeedback.textContent = ""; }, 4200);
+      }
+    }
+
+    function downloadTextFile(filename, content, type) {
+      const blob = new Blob([content || ""], { type: type + ";charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename || "selected-files-export.md";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     function selectedSourceItems() {
@@ -2732,6 +2946,13 @@ function renderHtml() {
     }
 
     localAnswer.addEventListener("click", (event) => {
+      const copyButton = event.target.closest?.(".local-copy-button");
+      if (copyButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        copyLocalSection(copyButton);
+        return;
+      }
       const button = event.target.closest?.(".dir-button");
       if (!button) return;
       event.preventDefault();
@@ -2748,6 +2969,28 @@ function renderHtml() {
       setNodeDirection(title, dir, align);
       body?.querySelectorAll("p, li, h1, h2, h3, h4").forEach((item) => setNodeDirection(item, dir, align));
     });
+
+    async function copyLocalSection(button) {
+      const nested = button.closest(".local-nested");
+      const details = nested || button.closest(".local-result");
+      if (!details) return;
+      const body = nested ? details.querySelector(".local-nested-body") : details.querySelector(".local-result-body");
+      const title = nested ? details.querySelector(".local-nested-title") : details.querySelector(".local-result-title");
+      const titleText = title?.innerText?.trim() || "Local section";
+      const format = button.dataset.format || "text";
+      const text = format === "markdown"
+        ? "## " + titleText + "\\n\\n" + (htmlToMarkdown(body?.innerHTML || "") || body?.innerText?.trim() || "")
+        : titleText + "\\n\\n" + (body?.innerText?.trim() || "");
+      const original = button.textContent;
+      try {
+        await navigator.clipboard.writeText(text.trim());
+        button.textContent = "OK";
+      } catch {
+        button.textContent = "Err";
+      } finally {
+        setTimeout(() => { button.textContent = original; }, 1200);
+      }
+    }
 
     function renderLocalStructured(markdown) {
       const parsed = parseLocalResults(markdown);
@@ -2847,7 +3090,7 @@ function renderHtml() {
       const open = shouldOpenLocalResult(index) ? " open" : "";
       const body = result.body.join("\\n").trim();
       return '<details class="local-result"' + open + '>' +
-        '<summary><span class="local-result-heading"><span class="local-result-title" dir="auto">' + escapeHtml(result.title) + '</span>' + renderDirectionControls() + '</span></summary>' +
+        '<summary><span class="local-result-heading"><span class="local-result-title" dir="auto">' + escapeHtml(result.title) + '</span>' + renderLocalCopyControls() + renderDirectionControls() + '</span></summary>' +
         '<div class="local-result-body" dir="auto">' +
         (result.ref ? '<p class="source-ref" dir="ltr">' + inlineMarkdown(result.ref) + '</p>' : '') +
         (body ? renderNestedPageContent(body) : '<p class="muted">No readable page content found.</p>') +
@@ -2877,12 +3120,19 @@ function renderHtml() {
         const open = index === 0 ? " open" : "";
         const body = section.lines.join("\\n").trim();
         return '<details class="local-nested"' + open + '>' +
-          '<summary><span class="local-result-heading"><span class="local-nested-title" dir="auto">' + inlineMarkdown(section.title) + '</span>' + renderDirectionControls() + '</span></summary>' +
+          '<summary><span class="local-result-heading"><span class="local-nested-title" dir="auto">' + inlineMarkdown(section.title) + '</span>' + renderLocalCopyControls() + renderDirectionControls() + '</span></summary>' +
           '<div class="local-nested-body" dir="auto">' +
           (body ? renderMarkdown(body) : '<p class="muted">No content in this section.</p>') +
           '</div></details>';
       }).join("");
       return introHtml + sectionsHtml;
+    }
+
+    function renderLocalCopyControls() {
+      return '<span class="local-section-tools" aria-label="Copy this local section">' +
+        '<button class="local-copy-button" type="button" data-format="text" title="Copy section as plain text">Txt</button>' +
+        '<button class="local-copy-button" type="button" data-format="markdown" title="Copy section as Markdown">MD</button>' +
+      '</span>';
     }
 
     function renderDirectionControls() {
