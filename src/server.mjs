@@ -1007,13 +1007,14 @@ function renderHtml() {
     tr.selectable-row input[type="checkbox"] { accent-color: var(--accent); }
     .muted { color: var(--muted); }
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
-    .side-topics { position: fixed; top: 0; right: 20px; bottom: 20px; width: 340px; overflow: hidden; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
+    .side-topics { position: fixed; top: 0; right: 20px; bottom: 20px; width: 340px; overflow: visible; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
     .side-topic-controls { flex: 0 0 auto; background: var(--panel); padding: 0 0 10px; border-bottom: 1px solid var(--line); }
     body.sidebar-hidden main { margin-right: 0; }
-    .side-topic-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .side-topic-header { display: block; margin-bottom: 10px; padding-right: 18px; }
     .side-topics h2 { margin: 0; font-size: 15px; }
-    .side-topic-toggle, .side-topic-restore { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; font-size: 18px; line-height: 1; }
-    .side-topic-restore { position: fixed; top: 20px; right: 20px; z-index: 18; box-shadow: 0 8px 18px var(--shadow); }
+    .side-topic-toggle, .side-topic-restore { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 34px; padding: 0; font-size: 17px; line-height: 1; border-radius: 6px 0 0 6px; box-shadow: 0 8px 18px var(--shadow); }
+    .side-topic-toggle { position: absolute; top: 58px; left: -29px; z-index: 19; }
+    .side-topic-restore { position: fixed; top: 118px; right: 20px; z-index: 18; }
     .side-topic-restore.hidden, .side-topics.hidden { display: none; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
@@ -1026,7 +1027,7 @@ function renderHtml() {
     .side-topic-sort button.active { border-color: var(--accent); background: var(--soft); color: var(--accent); }
     .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
     #topic-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 10px; }
-    .side-topics button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
+    .side-topics button:not(.side-topic-toggle) { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
     .side-topics button:hover { background: var(--soft); }
     .status { font-size: 13px; color: var(--muted); margin: -6px 0 16px; }
     .provider-state { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 12px; font-weight: 700; }
@@ -1071,7 +1072,8 @@ function renderHtml() {
     .config-path-row input { min-width: 0; }
     @media (max-width: 1240px) {
       main { margin-right: 0; padding-right: 20px; }
-      .side-topics { position: static; width: auto; max-height: 220px; margin: 0 20px 20px; border-top: 1px solid var(--line); border-radius: 6px; }
+      .side-topics { position: relative; width: auto; max-height: 220px; margin: 0 20px 20px; border-top: 1px solid var(--line); border-radius: 6px; overflow: visible; }
+      .side-topic-toggle { top: 14px; left: auto; right: -1px; border-radius: 0 6px 0 6px; }
       .side-topic-restore { top: auto; bottom: 20px; right: 20px; }
     }
   </style>

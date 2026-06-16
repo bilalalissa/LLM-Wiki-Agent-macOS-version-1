@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Sidebar Toggle Buttons Overlapped Layout
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The hide button consumed header space inside the sidebar, and the restore button could overlay top header controls while the sidebar was hidden.
+- **Cause:** Sidebar buttons inherited broad sidebar button styles and were positioned inside or too close to main controls.
+- **Fix:** The hide control is now a compact edge tab outside the sidebar content. The restore icon is offset lower and outside the header control cluster, while regular sidebar list buttons keep their full-width behavior.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML/CSS checks for sidebar toggle positioning.
+
 ## 2026-06-16 - Highlights Disappeared Across File Navigation And Sidebar Needed Icon Toggle
 
 - **Area:** `src/server.mjs`
