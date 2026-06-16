@@ -9,6 +9,7 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 AGENT="$RESOURCES/agent"
 APP_ICON="$ROOT/native/macos/LLMWikiAgent/Resources/AppIcon.icns"
+MACOS_ARCH="${MACOS_ARCH:-}"
 
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES" "$AGENT"
@@ -17,11 +18,17 @@ if [ ! -f "$APP_ICON" ]; then
   "$ROOT/scripts/generate_app_icon.sh"
 fi
 
-swiftc "$ROOT/native/macos/LLMWikiAgent/Sources/LLMWikiAgent/main.swift" \
-  -o "$MACOS/LLMWikiAgent" \
-  -framework AppKit \
-  -framework WebKit \
+SWIFTC_ARGS=(
+  "$ROOT/native/macos/LLMWikiAgent/Sources/LLMWikiAgent/main.swift"
+  -o "$MACOS/LLMWikiAgent"
+  -framework AppKit
+  -framework WebKit
   -framework ServiceManagement
+)
+if [ -n "$MACOS_ARCH" ]; then
+  SWIFTC_ARGS=(-target "$MACOS_ARCH-apple-macosx13.0" "${SWIFTC_ARGS[@]}")
+fi
+swiftc "${SWIFTC_ARGS[@]}"
 
 cat > "$CONTENTS/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

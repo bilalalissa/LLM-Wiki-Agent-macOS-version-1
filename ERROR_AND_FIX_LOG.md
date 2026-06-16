@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Intel macOS DMG Build Artifact Needed
+
+- **Area:** `scripts/build_macos_app.sh`, `scripts/build_macos_dmg.sh`
+- **Symptom:** The macOS build script produced only the host-architecture app bundle and had no repeatable DMG packaging command for Intel Macs.
+- **Cause:** `swiftc` was invoked without an explicit target architecture, and the repo did not include a DMG staging/creation script.
+- **Fix:** Added `MACOS_ARCH` support to the app build script and added `scripts/build_macos_dmg.sh`, which builds an `x86_64` app by default, stages it with an `/Applications` symlink, ad-hoc signs it, and creates `build/dist/LLM-Wiki-Agent-macOS-Intel.dmg`.
+- **Verification:** `./scripts/build_macos_dmg.sh`, `hdiutil verify build/dist/LLM-Wiki-Agent-macOS-Intel.dmg`, read-only DMG mount/listing, and `lipo -archs` confirmed the bundled executable is `x86_64`.
+
 ## 2026-06-16 - Files Export Needed User-Chosen Download Location
 
 - **Area:** `src/server.mjs`
