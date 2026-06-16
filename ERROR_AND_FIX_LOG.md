@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Add Note Saved Highlight But Did Not Add Note Indicator
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Opening the note editor no longer removed highlighting, but saving a note could fail to add the visible note indicator to the highlighted/selected text.
+- **Cause:** The note flow relied on re-finding the selected text after focus moved into the note editor. The live browser selection could be collapsed or changed before save, and the UI did not surface save or annotation failures.
+- **Fix:** The app now clones the selected range before opening the note editor, saves notes with explicit error handling, inserts the note indicator directly at the saved range when possible, and falls back to occurrence-based annotation.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML check for range-based note annotation helpers.
+
 ## 2026-06-16 - Sidebar Sort Controls Needed Tri-State Multi-Sort
 
 - **Area:** `src/server.mjs`

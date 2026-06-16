@@ -1383,6 +1383,7 @@ function renderHtml() {
     let lastChatMarkdown = "";
     let lastLocalMarkdown = "";
     let selectedInfo = null;
+    let selectedRange = null;
     let notesCache = [];
     let notePopoverTimer = null;
     let sideTopicsCache = [];
@@ -2891,6 +2892,7 @@ function renderHtml() {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       selectedInfo = selectionInfo(selection, box);
+      selectedRange = range.cloneRange();
       selectionToolbar.style.display = "flex";
       const toolbarRect = selectionToolbar.getBoundingClientRect();
       const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - toolbarRect.width - 12));
@@ -3039,23 +3041,37 @@ function renderHtml() {
 
     async function saveSelectedNote() {
       if (!selectedInfo || !noteText.value.trim()) return;
+      const saveButton = document.querySelector("#note-save");
+      const noteRange = selectedRange?.cloneRange?.();
       const noteSurface = selectedInfo.surfaceId === "local-answer" ? localAnswer : answer;
-      const response = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...selectedInfo, selectedText: selectedInfo.text, note: noteText.value.trim() })
-      });
-      const data = await response.json();
-      if (data.error) {
-        noteText.value = data.error;
-        return;
+      const noteBody = noteText.value.trim();
+      noteMediaFeedback.textContent = "Saving note...";
+      if (saveButton) saveButton.disabled = true;
+      try {
+        const response = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...selectedInfo, selectedText: selectedInfo.text, note: noteBody })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) {
+          throw new Error(data.error || "Could not save note.");
+        }
+        noteEditor.style.display = "none";
+        clearTextSelection();
+        notesCache = [data.note, ...notesCache.filter((note) => note.id !== data.note.id)];
+        const annotated = annotateSavedNote(noteSurface, data.note, noteRange);
+        selectedInfo = null;
+        selectedRange = null;
+        selectionToolbar.style.display = "none";
+        noteMediaFeedback.textContent = annotated ? "Saved" : "Saved. Open Notes to view.";
+        renderNotesList();
+        setTimeout(() => { noteMediaFeedback.textContent = ""; }, 1800);
+      } catch (error) {
+        noteMediaFeedback.textContent = error.message || "Could not save note.";
+      } finally {
+        if (saveButton) saveButton.disabled = false;
       }
-      noteEditor.style.display = "none";
-      clearTextSelection();
-      hideSelectionTools();
-      notesCache = [data.note, ...notesCache.filter((note) => note.id !== data.note.id)];
-      annotateNoteOccurrence(noteSurface, data.note);
-      renderNotesList();
     }
 
     function insertNoteLink() {
@@ -3250,6 +3266,16 @@ function renderHtml() {
       }
     }
 
+    function annotateSavedNote(container, note, range) {
+      if (range && container?.contains?.(range.commonAncestorContainer)) {
+        try {
+          insertNoteIndicatorAtRange(range, note);
+          return true;
+        } catch {}
+      }
+      return annotateNoteOccurrence(container, note);
+    }
+
     function annotateNoteOccurrence(container, note) {
       const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
@@ -3274,19 +3300,24 @@ function renderHtml() {
           if (index < 0) break;
           if (seen === targetOccurrence) {
             insertNoteIndicator(node, index, note);
-            return;
+            return true;
           }
           seen += 1;
           searchFrom = index + note.selectedText.length;
         }
         node = walker.nextNode();
       }
+      return false;
     }
 
     function insertNoteIndicator(node, index, note) {
       const range = document.createRange();
       range.setStart(node, index);
       range.setEnd(node, index + note.selectedText.length);
+      insertNoteIndicatorAtRange(range, note);
+    }
+
+    function insertNoteIndicatorAtRange(range, note) {
       const anchor = document.createElement("span");
       anchor.className = "note-anchor";
       anchor.dataset.noteId = note.id;
@@ -3298,6 +3329,10 @@ function renderHtml() {
         range.deleteContents();
         range.insertNode(anchor);
       }
+      anchor.after(createNoteIndicator(note));
+    }
+
+    function createNoteIndicator(note) {
       const indicator = document.createElement("span");
       indicator.className = "note-indicator";
       if (noteHasMedia(note.note)) indicator.classList.add("has-media");
@@ -3319,7 +3354,7 @@ function renderHtml() {
         event.stopPropagation();
         showNoteCard(note.id);
       });
-      anchor.after(indicator);
+      return indicator;
     }
 
     notePopover.addEventListener("mouseenter", () => {
@@ -3529,6 +3564,7 @@ function renderHtml() {
       selectionToolbar.style.display = "none";
       noteEditor.style.display = "none";
       selectedInfo = null;
+      selectedRange = null;
     }
 
     function clearChatResult() {
