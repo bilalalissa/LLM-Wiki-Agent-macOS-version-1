@@ -941,7 +941,11 @@ function renderHtml() {
     .dir-button { font: inherit; font-size: 11px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 3px 6px; cursor: pointer; }
     .dir-button:hover, .dir-button.active { color: var(--text); border-color: var(--accent); background: var(--soft); }
     .local-result-count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 6px; }
-    mark.agent-highlight { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 2px; }
+    mark.agent-highlight { background: var(--highlight-color, var(--mark)); color: #111827; border-radius: 2px; padding: 0 2px; }
+    mark.agent-highlight[data-highlight-color="yellow"] { --highlight-color: #fff2a8; }
+    mark.agent-highlight[data-highlight-color="green"] { --highlight-color: #c7f2a7; }
+    mark.agent-highlight[data-highlight-color="blue"] { --highlight-color: #bfdbfe; }
+    mark.agent-highlight[data-highlight-color="pink"] { --highlight-color: #fbcfe8; }
     .note-anchor { color: inherit; }
     .note-indicator { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 4px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); background: var(--soft); vertical-align: super; cursor: help; user-select: none; -webkit-user-select: none; }
     .note-indicator::before { content: ""; display: block; width: 5px; height: 5px; border-radius: 999px; background: currentColor; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 16%, transparent); }
@@ -986,7 +990,14 @@ function renderHtml() {
     .status-dot.orange { background: #f59e0b; }
     .status-dot.red { background: #dc2626; }
     .status-dot.grey { background: #9ca3af; }
-    .selection-toolbar { position: fixed; display: none; z-index: 20; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
+    .selection-toolbar { position: fixed; display: none; z-index: 20; align-items: center; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 24px); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
+    .highlight-swatches { display: inline-flex; align-items: center; gap: 4px; padding-right: 2px; }
+    .highlight-swatch { width: 28px; height: 28px; min-width: 28px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.62); }
+    .highlight-swatch:hover, .highlight-swatch:focus-visible { border-color: var(--accent); outline: none; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.72), 0 0 0 2px var(--soft); }
+    .highlight-yellow { background: #fff2a8; }
+    .highlight-green { background: #c7f2a7; }
+    .highlight-blue { background: #bfdbfe; }
+    .highlight-pink { background: #fbcfe8; }
     .snap-overlay { position: fixed; inset: 0; display: none; z-index: 40; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.76); padding: 32px; box-sizing: border-box; }
     .snap-box { width: min(920px, 92vw); max-height: 82vh; overflow: auto; background: #05070c; color: #f8fbff; border: 2px solid var(--snap-border, #70e6ff); border-radius: 8px; padding: 28px; box-shadow: 0 0 28px color-mix(in srgb, var(--snap-border, #70e6ff) 60%, transparent), inset 0 0 18px rgba(255, 255, 255, 0.08); animation: snap-spark 1.2s linear infinite; }
     .snap-text { white-space: pre-wrap; line-height: 1.45; font-size: var(--snap-size, 34px); font-weight: 750; letter-spacing: 0; }
@@ -1249,12 +1260,18 @@ function renderHtml() {
     <div id="topic-list" class="muted">Loading...</div>
   </aside>
   <div id="selection-toolbar" class="selection-toolbar">
-    <button id="sel-highlight" class="secondary" type="button">Highlight</button>
+    <div class="highlight-swatches" aria-label="Highlight color">
+      <button class="highlight-swatch highlight-yellow" type="button" data-highlight-color="yellow" title="Yellow highlight" aria-label="Yellow highlight"></button>
+      <button class="highlight-swatch highlight-green" type="button" data-highlight-color="green" title="Green highlight" aria-label="Green highlight"></button>
+      <button class="highlight-swatch highlight-blue" type="button" data-highlight-color="blue" title="Blue highlight" aria-label="Blue highlight"></button>
+      <button class="highlight-swatch highlight-pink" type="button" data-highlight-color="pink" title="Pink highlight" aria-label="Pink highlight"></button>
+    </div>
+    <button id="sel-highlight-clear" class="secondary" type="button">Clear highlight</button>
     <button id="sel-snap" class="secondary" type="button">Snap</button>
+    <button id="sel-note" class="secondary" type="button">Add note</button>
     <button id="sel-copy-text" class="secondary" type="button">Copy text</button>
     <button id="sel-copy-html" class="secondary" type="button">Copy formatted</button>
     <button id="sel-copy-md" class="secondary" type="button">Copy MD</button>
-    <button id="sel-note" class="secondary" type="button">Add note</button>
   </div>
   <div id="note-editor" class="note-editor">
     <div class="muted">Note for selected text</div>
@@ -2809,9 +2826,12 @@ function renderHtml() {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       selectedInfo = selectionInfo(selection, box);
-      selectionToolbar.style.left = Math.max(12, rect.left) + "px";
-      selectionToolbar.style.top = Math.max(12, rect.top - 48) + "px";
       selectionToolbar.style.display = "flex";
+      const toolbarRect = selectionToolbar.getBoundingClientRect();
+      const left = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - toolbarRect.width - 12));
+      const top = Math.max(12, rect.top - toolbarRect.height - 8);
+      selectionToolbar.style.left = left + "px";
+      selectionToolbar.style.top = top + "px";
     });
 
     document.addEventListener("mousedown", (event) => {
@@ -2820,21 +2840,32 @@ function renderHtml() {
       hideSelectionTools();
     });
 
-    document.querySelector("#sel-highlight").addEventListener("click", () => {
+    document.querySelectorAll(".highlight-swatch").forEach((button) => {
+      button.addEventListener("click", () => applyHighlightColor(button.dataset.highlightColor || "yellow"));
+    });
+    document.querySelector("#sel-highlight-clear").addEventListener("click", () => applyHighlightColor(""));
+
+    function applyHighlightColor(color) {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) return;
       const range = selection.getRangeAt(0);
       const existing = selectedHighlight(range) || closestHighlight(selection.anchorNode);
       if (existing) {
-        unwrapHighlight(existing);
+        if (color) {
+          existing.dataset.highlightColor = color;
+        } else {
+          unwrapHighlight(existing);
+        }
         selection.removeAllRanges();
         hideSelectionTools();
         return;
       }
+      if (!color) return;
       const indicatorNodes = selectedNoteIndicators(range);
       indicatorNodes.forEach((node) => node.remove());
       const mark = document.createElement("mark");
       mark.className = "agent-highlight";
+      mark.dataset.highlightColor = color;
       try {
         range.surroundContents(mark);
       } catch {
@@ -2843,7 +2874,7 @@ function renderHtml() {
       }
       selection.removeAllRanges();
       hideSelectionTools();
-    });
+    }
     document.querySelector("#sel-snap").addEventListener("click", showSnap);
     document.querySelector("#sel-copy-text").addEventListener("click", () => copySelected("text"));
     document.querySelector("#sel-copy-html").addEventListener("click", () => copySelected("html"));

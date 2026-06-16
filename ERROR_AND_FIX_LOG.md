@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Highlighting Needed Multiple Colors And Better Toolbar Order
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Highlighting only used one color, and the `Add note` action appeared after copy actions in the selection toolbar.
+- **Cause:** The selection toolbar exposed a single highlight button and fixed one `mark.agent-highlight` color through the theme mark variable.
+- **Fix:** Added yellow, green, blue, and pink highlight swatches, a clear-highlight action, highlight recoloring for existing marks, and moved `Add note` before the copy buttons.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML check for the new highlight controls.
+
 ## 2026-06-16 - Topics Sidebar Needed Sort Controls
 
 - **Area:** `src/server.mjs`
