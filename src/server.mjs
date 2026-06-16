@@ -12,7 +12,7 @@ import { saveChatAsRawSource } from "./chat-source.mjs";
 import { preflightBrowserClip, saveBrowserClip } from "./clip.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
-import { addNote, deleteNote, saveNoteMedia, updateNote } from "./notes.mjs";
+import { addNote, deleteNote, listNotes, saveNoteMedia, updateNote } from "./notes.mjs";
 import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
@@ -351,6 +351,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readBody(request);
       const note = addNote(config, JSON.parse(body || "{}"));
+      addNoteToCache(note);
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ note }));
     } catch (error) {
@@ -390,6 +391,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readBody(request);
       const result = updateNote(config, JSON.parse(body || "{}"));
+      refreshNotesCache();
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(result));
     } catch (error) {
@@ -404,6 +406,7 @@ const server = http.createServer(async (request, response) => {
       const body = await readBody(request);
       const { id } = JSON.parse(body || "{}");
       const result = deleteNote(config, String(id || ""));
+      removeNoteFromCache(String(id || ""));
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(result));
     } catch (error) {
@@ -533,6 +536,42 @@ function cachedTabPayload(kind) {
     error: state.error,
     updatedAt: state.updatedAt
   };
+}
+
+function addNoteToCache(note) {
+  const state = tabDataCache.notes;
+  refreshNotesCache();
+  if (!state.items.some((item) => item.id === note.id)) {
+    state.items = [note, ...state.items.filter((item) => item.id !== note.id)];
+    state.ready = true;
+    state.loading = false;
+    state.error = "";
+    state.updatedAt = new Date().toISOString();
+  }
+}
+
+function removeNoteFromCache(id) {
+  const state = tabDataCache.notes;
+  state.items = state.items.filter((item) => item.id !== id);
+  state.ready = true;
+  state.loading = false;
+  state.error = "";
+  state.updatedAt = new Date().toISOString();
+}
+
+function refreshNotesCache() {
+  const state = tabDataCache.notes;
+  try {
+    state.items = listNotes(config);
+    state.ready = true;
+    state.loading = false;
+    state.error = "";
+    state.updatedAt = new Date().toISOString();
+  } catch (error) {
+    state.ready = false;
+    state.loading = false;
+    state.error = error.message;
+  }
 }
 
 function invalidateTabData() {
@@ -1385,6 +1424,7 @@ function renderHtml() {
     let selectedInfo = null;
     let selectedRange = null;
     let notesCache = [];
+    let highlightCache = { answer: [], "local-answer": [] };
     let notePopoverTimer = null;
     let sideTopicsCache = [];
     let filesCache = [];
@@ -1442,11 +1482,11 @@ function renderHtml() {
     localResultExpand.value = localStorage.getItem("llm-wiki-local-result-expand") || "first";
     localResultView.addEventListener("change", () => {
       localStorage.setItem("llm-wiki-local-result-view", localResultView.value);
-      renderLocalResultBox();
+      renderLocalResultBox({ preserveHighlights: true });
     });
     localResultExpand.addEventListener("change", () => {
       localStorage.setItem("llm-wiki-local-result-expand", localResultExpand.value);
-      renderLocalResultBox();
+      renderLocalResultBox({ preserveHighlights: true });
     });
 
     tabs.forEach((tab) => {
@@ -1478,6 +1518,7 @@ function renderHtml() {
         });
         const data = await response.json();
         lastChatMarkdown = data.answer || data.error || "No answer.";
+        highlightCache.answer = [];
         answer.innerHTML = renderMarkdown(lastChatMarkdown);
         applyAutoDirection(answer);
         selectCitedVault(lastChatMarkdown);
@@ -1505,6 +1546,7 @@ function renderHtml() {
         });
         const data = await response.json();
         lastLocalMarkdown = data.answer || data.error || "No answer.";
+        highlightCache["local-answer"] = [];
         renderLocalResultBox();
       } catch (error) {
         localAnswer.textContent = error.message;
@@ -2637,17 +2679,19 @@ function renderHtml() {
       return html.join("");
     }
 
-    function renderLocalResultBox() {
+    function renderLocalResultBox(options = {}) {
       if (!lastLocalMarkdown) {
         localAnswer.textContent = "Ready for local search.";
         return;
       }
+      if (options.preserveHighlights) storeSurfaceHighlights(localAnswer);
       if (localResultView.value === "plain") {
         localAnswer.innerHTML = renderMarkdown(lastLocalMarkdown);
       } else {
         localAnswer.innerHTML = renderLocalStructured(lastLocalMarkdown);
       }
       applyAutoDirection(localAnswer);
+      restoreSurfaceHighlights(localAnswer);
       applyNoteAnnotations(localAnswer);
     }
 
@@ -3249,11 +3293,107 @@ function renderHtml() {
 
     function refreshResultAnnotations() {
       if (lastChatMarkdown) {
+        storeSurfaceHighlights(answer);
         answer.innerHTML = renderMarkdown(lastChatMarkdown);
+        applyAutoDirection(answer);
+        restoreSurfaceHighlights(answer);
         applyNoteAnnotations(answer);
       }
       if (lastLocalMarkdown) {
-        renderLocalResultBox();
+        renderLocalResultBox({ preserveHighlights: true });
+      }
+    }
+
+    function storeSurfaceHighlights(container) {
+      const key = surfaceHighlightKey(container);
+      if (!key) return;
+      highlightCache[key] = Array.from(container.querySelectorAll("mark.agent-highlight"))
+        .map((mark) => ({
+          text: mark.textContent || "",
+          color: mark.dataset.highlightColor || "yellow",
+          occurrence: highlightOccurrence(container, mark)
+        }))
+        .filter((item) => item.text.trim().length > 0);
+    }
+
+    function restoreSurfaceHighlights(container) {
+      const key = surfaceHighlightKey(container);
+      if (!key) return;
+      for (const highlight of highlightCache[key] || []) {
+        annotateHighlightOccurrence(container, highlight);
+      }
+    }
+
+    function surfaceHighlightKey(container) {
+      if (container === answer) return "answer";
+      if (container === localAnswer) return "local-answer";
+      return "";
+    }
+
+    function highlightOccurrence(container, mark) {
+      const text = mark.textContent || "";
+      if (!text) return 0;
+      const before = document.createRange();
+      before.selectNodeContents(container);
+      before.setEndBefore(mark);
+      const prefix = before.toString().toLowerCase();
+      const needle = text.toLowerCase();
+      let count = 0;
+      let index = prefix.indexOf(needle);
+      while (index !== -1) {
+        count += 1;
+        index = prefix.indexOf(needle, index + needle.length);
+      }
+      return count;
+    }
+
+    function annotateHighlightOccurrence(container, highlight) {
+      const selectedText = String(highlight.text || "");
+      if (!selectedText.trim()) return false;
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || parent.closest("mark.agent-highlight") || parent.closest(".note-indicator") || parent.closest(".source-ref")) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return node.nodeValue.toLowerCase().includes(selectedText.toLowerCase())
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        }
+      });
+      const targetOccurrence = Number(highlight.occurrence || 0);
+      let seen = 0;
+      let node = walker.nextNode();
+      while (node) {
+        const lower = node.nodeValue.toLowerCase();
+        let searchFrom = 0;
+        while (true) {
+          const index = lower.indexOf(selectedText.toLowerCase(), searchFrom);
+          if (index < 0) break;
+          if (seen === targetOccurrence) {
+            insertHighlight(node, index, selectedText.length, highlight.color || "yellow");
+            return true;
+          }
+          seen += 1;
+          searchFrom = index + selectedText.length;
+        }
+        node = walker.nextNode();
+      }
+      return false;
+    }
+
+    function insertHighlight(node, index, length, color) {
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + length);
+      const mark = document.createElement("mark");
+      mark.className = "agent-highlight";
+      mark.dataset.highlightColor = color;
+      try {
+        range.surroundContents(mark);
+      } catch {
+        mark.appendChild(range.extractContents());
+        range.insertNode(mark);
       }
     }
 

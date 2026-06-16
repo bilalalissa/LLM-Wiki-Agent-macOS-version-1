@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Tab Changes Could Hide Notes Or Remove Highlights
+
+- **Area:** `src/server.mjs`
+- **Symptom:** After adding notes or highlights, moving to another tab could make visible highlights disappear, and newly added notes were not always shown in the Notes tab.
+- **Cause:** Notes tab loading refreshed result annotations by rebuilding Chat/Local result HTML from markdown, which discarded DOM-only highlights. The server also served `/api/notes` from a worker cache that was not updated immediately after note add/update/delete.
+- **Fix:** Result redraws now snapshot and restore client-side highlights by text, color, and occurrence. Note add/update/delete now updates or refreshes the notes cache immediately so the Notes tab sees current notes.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML check for highlight snapshot/restore helpers and notes cache updates.
+
 ## 2026-06-16 - Notes And Highlights Cancelled Each Other
 
 - **Area:** `src/server.mjs`
