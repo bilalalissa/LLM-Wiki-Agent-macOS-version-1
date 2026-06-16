@@ -1009,10 +1009,12 @@ function renderHtml() {
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
     .side-topics { position: fixed; top: 0; right: 20px; bottom: 20px; width: 340px; overflow: hidden; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
     .side-topic-controls { flex: 0 0 auto; background: var(--panel); padding: 0 0 10px; border-bottom: 1px solid var(--line); }
+    body.sidebar-hidden main { margin-right: 0; }
     .side-topic-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
     .side-topics h2 { margin: 0; font-size: 15px; }
-    .side-topic-toggle { flex: 0 0 auto; width: auto; padding: 4px 7px; font-size: 12px; }
-    .side-topic-tools.hidden { display: none; }
+    .side-topic-toggle, .side-topic-restore { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; font-size: 18px; line-height: 1; }
+    .side-topic-restore { position: fixed; top: 20px; right: 20px; z-index: 18; box-shadow: 0 8px 18px var(--shadow); }
+    .side-topic-restore.hidden, .side-topics.hidden { display: none; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
     .side-topic-clear { flex: 0 0 34px; width: 34px; padding: 0; text-align: center; }
@@ -1070,6 +1072,7 @@ function renderHtml() {
     @media (max-width: 1240px) {
       main { margin-right: 0; padding-right: 20px; }
       .side-topics { position: static; width: auto; max-height: 220px; margin: 0 20px 20px; border-top: 1px solid var(--line); border-radius: 6px; }
+      .side-topic-restore { top: auto; bottom: 20px; right: 20px; }
     }
   </style>
 </head>
@@ -1282,7 +1285,7 @@ function renderHtml() {
     <div class="side-topic-controls">
       <div class="side-topic-header">
         <h2>Topics & Insights</h2>
-        <button id="side-topic-toggle" class="secondary side-topic-toggle" type="button" aria-expanded="true">Hide search</button>
+        <button id="side-topic-hide" class="secondary side-topic-toggle" type="button" title="Hide sidebar" aria-label="Hide sidebar">×</button>
       </div>
       <div id="side-topic-tools" class="side-topic-tools">
         <div class="side-topic-search-row">
@@ -1305,6 +1308,7 @@ function renderHtml() {
     </div>
     <div id="topic-list" class="muted">Loading...</div>
   </aside>
+  <button id="side-topic-show" class="secondary side-topic-restore hidden" type="button" title="Show sidebar" aria-label="Show sidebar">☰</button>
   <div id="selection-toolbar" class="selection-toolbar">
     <div class="highlight-swatches" aria-label="Highlight color">
       <button class="highlight-swatch highlight-yellow" type="button" data-highlight-color="yellow" title="Yellow highlight" aria-label="Yellow highlight"></button>
@@ -1402,8 +1406,9 @@ function renderHtml() {
     const openConfigFile = document.querySelector("#open-config-file");
     const configPathFeedback = document.querySelector("#config-path-feedback");
     const topicList = document.querySelector("#topic-list");
-    const sideTopicTools = document.querySelector("#side-topic-tools");
-    const sideTopicToggle = document.querySelector("#side-topic-toggle");
+    const sideTopics = document.querySelector(".side-topics");
+    const sideTopicHide = document.querySelector("#side-topic-hide");
+    const sideTopicShow = document.querySelector("#side-topic-show");
     const sideTopicSearch = document.querySelector("#side-topic-search");
     const sideTopicClear = document.querySelector("#side-topic-clear");
     const sideTopicType = document.querySelector("#side-topic-type");
@@ -1435,7 +1440,7 @@ function renderHtml() {
     let selectedInfo = null;
     let selectedRange = null;
     let notesCache = [];
-    let highlightCache = { answer: [], "local-answer": [] };
+    let highlightCache = {};
     let notePopoverTimer = null;
     let sideTopicsCache = [];
     let filesCache = [];
@@ -1529,7 +1534,6 @@ function renderHtml() {
         });
         const data = await response.json();
         lastChatMarkdown = data.answer || data.error || "No answer.";
-        highlightCache.answer = [];
         answer.innerHTML = renderMarkdown(lastChatMarkdown);
         applyAutoDirection(answer);
         selectCitedVault(lastChatMarkdown);
@@ -1557,7 +1561,6 @@ function renderHtml() {
         });
         const data = await response.json();
         lastLocalMarkdown = data.answer || data.error || "No answer.";
-        highlightCache["local-answer"] = [];
         renderLocalResultBox();
       } catch (error) {
         localAnswer.textContent = error.message;
@@ -1576,12 +1579,16 @@ function renderHtml() {
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
-    const savedSideTopicSearchHidden = localStorage.getItem("llm-wiki-side-topic-search-hidden") === "1";
-    setSideTopicSearchHidden(savedSideTopicSearchHidden);
-    sideTopicToggle.addEventListener("click", () => {
-      const hidden = !sideTopicTools.classList.contains("hidden");
-      setSideTopicSearchHidden(hidden);
-      localStorage.setItem("llm-wiki-side-topic-search-hidden", hidden ? "1" : "0");
+    const savedSideTopicHidden = localStorage.getItem("llm-wiki-side-topic-hidden") === "1";
+    setSideTopicHidden(savedSideTopicHidden);
+    sideTopicHide.addEventListener("click", () => {
+      setSideTopicHidden(true);
+      localStorage.setItem("llm-wiki-side-topic-hidden", "1");
+    });
+    sideTopicShow.addEventListener("click", () => {
+      setSideTopicHidden(false);
+      localStorage.setItem("llm-wiki-side-topic-hidden", "0");
+      ensureSideTopicsLoaded();
     });
     sideTopicSearch.addEventListener("focus", ensureSideTopicsLoaded);
     sideTopicSearch.addEventListener("input", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
@@ -2503,10 +2510,11 @@ function renderHtml() {
         : "Click to sort by " + label + ".";
     }
 
-    function setSideTopicSearchHidden(hidden) {
-      sideTopicTools.classList.toggle("hidden", hidden);
-      sideTopicToggle.textContent = hidden ? "Show search" : "Hide search";
-      sideTopicToggle.setAttribute("aria-expanded", hidden ? "false" : "true");
+    function setSideTopicHidden(hidden) {
+      document.body.classList.toggle("sidebar-hidden", hidden);
+      sideTopics.classList.toggle("hidden", hidden);
+      sideTopicShow.classList.toggle("hidden", !hidden);
+      sideTopicHide.setAttribute("aria-expanded", hidden ? "false" : "true");
     }
 
     function loadSideTopicSortState() {
@@ -2599,6 +2607,8 @@ function renderHtml() {
       const hasSearchText = Boolean(input.value.trim() || localInput.value.trim());
       const hasResultContent = Boolean(lastChatMarkdown.trim() || lastLocalMarkdown.trim());
       if (hasSearchText || hasResultContent) {
+        storeSurfaceHighlights(answer);
+        storeSurfaceHighlights(localAnswer);
         input.value = "";
         localInput.value = "";
         answer.textContent = "Ready.";
@@ -2984,6 +2994,9 @@ function renderHtml() {
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed) return;
       const range = selection.getRangeAt(0);
+      const box = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+        ? range.commonAncestorContainer.parentElement?.closest?.(".answer")
+        : range.commonAncestorContainer.closest?.(".answer");
       const existing = selectedHighlight(range) || closestHighlight(selection.anchorNode);
       if (existing) {
         if (color) {
@@ -2991,6 +3004,7 @@ function renderHtml() {
         } else {
           unwrapHighlight(existing);
         }
+        if (box) storeSurfaceHighlights(box);
         selection.removeAllRanges();
         hideSelectionTools();
         return;
@@ -3005,6 +3019,7 @@ function renderHtml() {
         mark.appendChild(range.extractContents());
         range.insertNode(mark);
       }
+      if (box) storeSurfaceHighlights(box);
       selection.removeAllRanges();
       hideSelectionTools();
     }
@@ -3349,9 +3364,18 @@ function renderHtml() {
     }
 
     function surfaceHighlightKey(container) {
-      if (container === answer) return "answer";
-      if (container === localAnswer) return "local-answer";
+      if (container === answer && lastChatMarkdown) return "answer:" + hashString(lastChatMarkdown);
+      if (container === localAnswer && lastLocalMarkdown) return "local-answer:" + hashString(lastLocalMarkdown);
       return "";
+    }
+
+    function hashString(value) {
+      let hash = 0;
+      const text = String(value || "");
+      for (let i = 0; i < text.length; i += 1) {
+        hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+      }
+      return String(hash >>> 0);
     }
 
     function highlightOccurrence(container, mark) {

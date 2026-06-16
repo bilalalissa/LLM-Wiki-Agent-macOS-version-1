@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Highlights Disappeared Across File Navigation And Sidebar Needed Icon Toggle
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Highlights could disappear after moving to another file/result and returning. The sidebar toggle was a text button that only hid the search controls.
+- **Cause:** Highlight state was only snapshotted during redraws, not immediately after highlight changes, and the cache was not keyed by result/file content. The sidebar toggle targeted the search controls instead of the whole sidebar.
+- **Fix:** Highlight changes now immediately update a content-keyed cache, and navigation stores highlights before replacing result content. The sidebar now uses icon-only hide/show buttons to collapse or restore the whole sidebar, expanding the main app area while hidden.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML checks for content-keyed highlights and full-sidebar toggle controls.
+
 ## 2026-06-16 - Partial Notes Inside Highlights Attached To Whole Highlight
 
 - **Area:** `src/server.mjs`
