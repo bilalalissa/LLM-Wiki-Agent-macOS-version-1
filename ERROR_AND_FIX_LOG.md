@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Partial Notes Inside Highlights Attached To Whole Highlight
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Selecting part of a highlighted sentence and adding a note placed the note indicator at the end of the full highlighted sentence instead of the selected words.
+- **Cause:** Note insertion treated any range intersecting a highlight as a note on the entire highlight element.
+- **Fix:** Partial selections inside a highlight now get their own inline note anchor inside the existing highlight, while full-highlight selections still attach to the whole highlight. The sidebar also gained a persisted search/filter toggle so the topic list can expand when search controls are hidden.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML checks for inline note anchors and sidebar search toggle.
+
 ## 2026-06-16 - Notes Were Intermittent Across Save, List, And Annotation
 
 - **Area:** `src/server.mjs`, `src/tab-data-worker.mjs`

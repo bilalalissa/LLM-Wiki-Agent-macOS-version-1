@@ -1009,7 +1009,10 @@ function renderHtml() {
     .path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; }
     .side-topics { position: fixed; top: 0; right: 20px; bottom: 20px; width: 340px; overflow: hidden; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 6px 6px; padding: 14px; box-shadow: 0 12px 30px var(--shadow); box-sizing: border-box; }
     .side-topic-controls { flex: 0 0 auto; background: var(--panel); padding: 0 0 10px; border-bottom: 1px solid var(--line); }
-    .side-topics h2 { margin: 0 0 10px; font-size: 15px; }
+    .side-topic-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .side-topics h2 { margin: 0; font-size: 15px; }
+    .side-topic-toggle { flex: 0 0 auto; width: auto; padding: 4px 7px; font-size: 12px; }
+    .side-topic-tools.hidden { display: none; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
     .side-topic-clear { flex: 0 0 34px; width: 34px; padding: 0; text-align: center; }
@@ -1277,22 +1280,27 @@ function renderHtml() {
   </main>
   <aside class="side-topics">
     <div class="side-topic-controls">
-      <h2>Topics & Insights</h2>
-      <div class="side-topic-search-row">
-        <input id="side-topic-search" class="side-topic-search" autocomplete="off" placeholder="Search title, tag, date, area, concept">
-        <button id="side-topic-clear" class="secondary side-topic-clear" type="button" title="Clear topic search">x</button>
+      <div class="side-topic-header">
+        <h2>Topics & Insights</h2>
+        <button id="side-topic-toggle" class="secondary side-topic-toggle" type="button" aria-expanded="true">Hide search</button>
       </div>
-      <div class="side-topic-filters">
-        <select id="side-topic-type" title="Filter by wiki element">
-          <option value="">All elements</option>
-        </select>
-        <input id="side-topic-tag" autocomplete="off" placeholder="Tag">
-        <input id="side-topic-from" type="date" title="Updated from">
-        <input id="side-topic-to" type="date" title="Updated to">
-      </div>
-      <div class="side-topic-sort" aria-label="Sort topics">
-        <button type="button" data-sort-key="date" title="Toggle date sorting">Date</button>
-        <button type="button" data-sort-key="alpha" title="Toggle alphabetical sorting">A-Z</button>
+      <div id="side-topic-tools" class="side-topic-tools">
+        <div class="side-topic-search-row">
+          <input id="side-topic-search" class="side-topic-search" autocomplete="off" placeholder="Search title, tag, date, area, concept">
+          <button id="side-topic-clear" class="secondary side-topic-clear" type="button" title="Clear topic search">x</button>
+        </div>
+        <div class="side-topic-filters">
+          <select id="side-topic-type" title="Filter by wiki element">
+            <option value="">All elements</option>
+          </select>
+          <input id="side-topic-tag" autocomplete="off" placeholder="Tag">
+          <input id="side-topic-from" type="date" title="Updated from">
+          <input id="side-topic-to" type="date" title="Updated to">
+        </div>
+        <div class="side-topic-sort" aria-label="Sort topics">
+          <button type="button" data-sort-key="date" title="Toggle date sorting">Date</button>
+          <button type="button" data-sort-key="alpha" title="Toggle alphabetical sorting">A-Z</button>
+        </div>
       </div>
     </div>
     <div id="topic-list" class="muted">Loading...</div>
@@ -1394,6 +1402,8 @@ function renderHtml() {
     const openConfigFile = document.querySelector("#open-config-file");
     const configPathFeedback = document.querySelector("#config-path-feedback");
     const topicList = document.querySelector("#topic-list");
+    const sideTopicTools = document.querySelector("#side-topic-tools");
+    const sideTopicToggle = document.querySelector("#side-topic-toggle");
     const sideTopicSearch = document.querySelector("#side-topic-search");
     const sideTopicClear = document.querySelector("#side-topic-clear");
     const sideTopicType = document.querySelector("#side-topic-type");
@@ -1566,6 +1576,13 @@ function renderHtml() {
     deleteSourcesButton.addEventListener("click", deleteSelectedSources);
     deleteArchivesButton.addEventListener("click", deleteSelectedArchives);
     restoreArchivesButton.addEventListener("click", restoreSelectedArchives);
+    const savedSideTopicSearchHidden = localStorage.getItem("llm-wiki-side-topic-search-hidden") === "1";
+    setSideTopicSearchHidden(savedSideTopicSearchHidden);
+    sideTopicToggle.addEventListener("click", () => {
+      const hidden = !sideTopicTools.classList.contains("hidden");
+      setSideTopicSearchHidden(hidden);
+      localStorage.setItem("llm-wiki-side-topic-search-hidden", hidden ? "1" : "0");
+    });
     sideTopicSearch.addEventListener("focus", ensureSideTopicsLoaded);
     sideTopicSearch.addEventListener("input", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
     sideTopicType.addEventListener("focus", ensureSideTopicsLoaded);
@@ -2484,6 +2501,12 @@ function renderHtml() {
       button.title = direction
         ? label + " sorting " + (direction === "asc" ? "ascending" : "descending") + ". Click to toggle."
         : "Click to sort by " + label + ".";
+    }
+
+    function setSideTopicSearchHidden(hidden) {
+      sideTopicTools.classList.toggle("hidden", hidden);
+      sideTopicToggle.textContent = hidden ? "Show search" : "Hide search";
+      sideTopicToggle.setAttribute("aria-expanded", hidden ? "false" : "true");
     }
 
     function loadSideTopicSortState() {
@@ -3459,6 +3482,12 @@ function renderHtml() {
     function insertNoteIndicatorAtRange(range, note) {
       const highlighted = selectedHighlight(range) || closestHighlight(range.startContainer) || closestHighlight(range.endContainer);
       if (highlighted) {
+        if (range.toString().trim() && range.toString().trim() !== highlighted.textContent.trim()) {
+          try {
+            insertInlineNoteAnchor(range, note);
+            return;
+          } catch {}
+        }
         highlighted.classList.add("note-anchor");
         highlighted.dataset.noteId = note.id;
         if (document.body.dataset.noteDisplay === "tooltip") highlighted.title = note.note;
@@ -3474,6 +3503,20 @@ function renderHtml() {
       } catch {
         anchor.textContent = range.toString();
         range.deleteContents();
+        range.insertNode(anchor);
+      }
+      anchor.after(createNoteIndicator(note));
+    }
+
+    function insertInlineNoteAnchor(range, note) {
+      const anchor = document.createElement("span");
+      anchor.className = "note-anchor";
+      anchor.dataset.noteId = note.id;
+      if (document.body.dataset.noteDisplay === "tooltip") anchor.title = note.note;
+      try {
+        range.surroundContents(anchor);
+      } catch {
+        anchor.appendChild(range.extractContents());
         range.insertNode(anchor);
       }
       anchor.after(createNoteIndicator(note));
