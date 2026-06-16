@@ -2928,8 +2928,6 @@ function renderHtml() {
         return;
       }
       if (!color) return;
-      const indicatorNodes = selectedNoteIndicators(range);
-      indicatorNodes.forEach((node) => node.remove());
       const mark = document.createElement("mark");
       mark.className = "agent-highlight";
       mark.dataset.highlightColor = color;
@@ -3318,6 +3316,14 @@ function renderHtml() {
     }
 
     function insertNoteIndicatorAtRange(range, note) {
+      const highlighted = selectedHighlight(range) || closestHighlight(range.startContainer) || closestHighlight(range.endContainer);
+      if (highlighted) {
+        highlighted.classList.add("note-anchor");
+        highlighted.dataset.noteId = note.id;
+        if (document.body.dataset.noteDisplay === "tooltip") highlighted.title = note.note;
+        highlighted.after(createNoteIndicator(note));
+        return;
+      }
       const anchor = document.createElement("span");
       anchor.className = "note-anchor";
       anchor.dataset.noteId = note.id;
@@ -3613,13 +3619,6 @@ function renderHtml() {
       }
       parent.removeChild(element);
       parent.normalize();
-    }
-
-    function selectedNoteIndicators(range) {
-      const root = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
-        ? range.commonAncestorContainer.parentElement
-        : range.commonAncestorContainer;
-      return Array.from(root.querySelectorAll?.(".note-indicator") || []).filter((node) => range.intersectsNode(node));
     }
 
     topicList.textContent = "Focus the search box or open Topics to load topics.";

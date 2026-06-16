@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Notes And Highlights Cancelled Each Other
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Adding a note on highlighted text could remove the highlight, and highlighting text with an existing note could remove the note indicator.
+- **Cause:** Highlighting explicitly removed note indicators inside the selected range, while note insertion could replace a selected highlight with a plain note anchor when range wrapping failed.
+- **Fix:** Highlighting now preserves note indicators. Note insertion detects an existing highlight and uses that highlight as the note anchor, placing the note indicator after it without replacing highlighted text.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML check for highlight-preserving note insertion.
+
 ## 2026-06-16 - Add Note Saved Highlight But Did Not Add Note Indicator
 
 - **Area:** `src/server.mjs`
