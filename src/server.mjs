@@ -2875,7 +2875,7 @@ function renderHtml() {
         vault = refVault.trim();
         path = rest.join("/").trim();
       }
-      return { text, html, markdown, vault, path, occurrence: selectionOccurrence(selection, box, text) };
+      return { text, html, markdown, vault, path, occurrence: selectionOccurrence(selection, box, text), surfaceId: box.id || "" };
     }
 
     function selectionOccurrence(selection, box, selectedText) {
@@ -2910,6 +2910,7 @@ function renderHtml() {
 
     async function saveSelectedNote() {
       if (!selectedInfo || !noteText.value.trim()) return;
+      const noteSurface = selectedInfo.surfaceId === "local-answer" ? localAnswer : answer;
       const response = await fetch("/api/notes", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2924,7 +2925,7 @@ function renderHtml() {
       clearTextSelection();
       hideSelectionTools();
       notesCache = [data.note, ...notesCache.filter((note) => note.id !== data.note.id)];
-      refreshResultAnnotations();
+      annotateNoteOccurrence(noteSurface, data.note);
       renderNotesList();
     }
 

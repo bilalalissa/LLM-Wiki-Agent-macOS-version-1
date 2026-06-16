@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Saving Notes Removed In-Page Highlights
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Adding a note, including notes with attached media/files, removed highlighted text from the displayed source/result under revision.
+- **Cause:** The note-save flow called `refreshResultAnnotations()`, which rebuilt the Chat/Local result HTML from markdown. That redraw preserved saved note indicators but discarded temporary `mark.agent-highlight` elements.
+- **Fix:** Saved notes now remember which result surface they came from and add only the new note indicator in place. The result is no longer fully re-rendered during note save, so existing highlights stay visible.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML verification for targeted note annotation.
+
 ## 2026-06-04 - Topics Sidebar Did Not Refresh After New Topics
 
 - **Area:** `src/server.mjs`
