@@ -976,7 +976,7 @@ function renderHtml() {
     .side-topic-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
     .side-topic-filters select, .side-topic-filters input { width: 100%; min-width: 0; box-sizing: border-box; padding: 7px; font-size: 13px; }
     .side-topic-filters .wide { grid-column: 1 / -1; }
-    .side-topic-sort { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 10px; }
+    .side-topic-sort { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
     .side-topic-sort button { border: 1px solid var(--line); background: var(--panel); text-align: center; padding: 6px 4px; font-size: 12px; font-weight: 700; }
     .side-topic-sort button.active { border-color: var(--accent); background: var(--soft); color: var(--accent); }
     .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
@@ -1251,10 +1251,8 @@ function renderHtml() {
         <input id="side-topic-to" type="date" title="Updated to">
       </div>
       <div class="side-topic-sort" aria-label="Sort topics">
-        <button class="active" type="button" data-sort="date-desc" title="Newest first">Date ↓</button>
-        <button type="button" data-sort="date-asc" title="Oldest first">Date ↑</button>
-        <button type="button" data-sort="alpha-asc" title="A to Z">A-Z</button>
-        <button type="button" data-sort="alpha-desc" title="Z to A">Z-A</button>
+        <button type="button" data-sort-key="date" title="Toggle date sorting">Date</button>
+        <button type="button" data-sort-key="alpha" title="Toggle alphabetical sorting">A-Z</button>
       </div>
     </div>
     <div id="topic-list" class="muted">Loading...</div>
@@ -1394,7 +1392,7 @@ function renderHtml() {
     let sideTopicsLoaded = false;
     let sideTopicsLoading = false;
     let sideTopicsUpdatedAt = "";
-    let sideTopicSortMode = localStorage.getItem("llm-wiki-side-topic-sort") || "date-desc";
+    let sideTopicSortState = loadSideTopicSortState();
     const tableSelection = {
       files: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" },
       archives: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" }
@@ -1535,11 +1533,9 @@ function renderHtml() {
     sideTopicTo.addEventListener("focus", ensureSideTopicsLoaded);
     sideTopicTo.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
     sideTopicSortButtons.forEach((button) => {
-      button.classList.toggle("active", button.dataset.sort === sideTopicSortMode);
+      updateSideTopicSortButton(button);
       button.addEventListener("click", () => {
-        sideTopicSortMode = button.dataset.sort || "date-desc";
-        localStorage.setItem("llm-wiki-side-topic-sort", sideTopicSortMode);
-        sideTopicSortButtons.forEach((item) => item.classList.toggle("active", item === button));
+        cycleSideTopicSort(button.dataset.sortKey);
         ensureSideTopicsLoaded();
         renderSideTopics();
       });
@@ -2403,14 +2399,83 @@ function renderHtml() {
     }
 
     function compareSideTopicGroups(a, b) {
-      if (sideTopicSortMode === "alpha-desc") return b.topic.title.localeCompare(a.topic.title);
-      if (sideTopicSortMode === "alpha-asc") return a.topic.title.localeCompare(b.topic.title);
-      if (sideTopicSortMode === "date-asc") {
-        return String(a.updated || "").localeCompare(String(b.updated || "")) ||
-          a.topic.title.localeCompare(b.topic.title);
+      const activeSorts = sideTopicSortState.order
+        .filter((key) => sideTopicSortState[key] === "asc" || sideTopicSortState[key] === "desc");
+      for (const key of activeSorts) {
+        const result = compareSideTopicByKey(a, b, key, sideTopicSortState[key]);
+        if (result) return result;
       }
-      return String(b.updated || "").localeCompare(String(a.updated || "")) ||
-        a.topic.title.localeCompare(b.topic.title);
+      return a.topic.title.localeCompare(b.topic.title);
+    }
+
+    function compareSideTopicByKey(a, b, key, direction) {
+      const multiplier = direction === "desc" ? -1 : 1;
+      if (key === "date") {
+        return String(a.updated || "").localeCompare(String(b.updated || "")) * multiplier;
+      }
+      if (key === "alpha") {
+        return a.topic.title.localeCompare(b.topic.title) * multiplier;
+      }
+      return 0;
+    }
+
+    function cycleSideTopicSort(key) {
+      if (key !== "date" && key !== "alpha") return;
+      const current = sideTopicSortState[key] || "";
+      const next = current === "" ? "asc" : current === "asc" ? "desc" : "";
+      sideTopicSortState[key] = next;
+      sideTopicSortState.order = [key, ...sideTopicSortState.order.filter((item) => item !== key)];
+      saveSideTopicSortState();
+      sideTopicSortButtons.forEach(updateSideTopicSortButton);
+    }
+
+    function updateSideTopicSortButton(button) {
+      const key = button.dataset.sortKey;
+      const direction = sideTopicSortState[key] || "";
+      const label = key === "date" ? "Date" : "A-Z";
+      const suffix = direction === "asc" ? " ↑" : direction === "desc" ? " ↓" : "";
+      button.textContent = label + suffix;
+      button.classList.toggle("active", Boolean(direction));
+      button.setAttribute("aria-pressed", direction ? "true" : "false");
+      button.title = direction
+        ? label + " sorting " + (direction === "asc" ? "ascending" : "descending") + ". Click to toggle."
+        : "Click to sort by " + label + ".";
+    }
+
+    function loadSideTopicSortState() {
+      const fallback = { date: "", alpha: "", order: ["date", "alpha"] };
+      try {
+        const saved = JSON.parse(localStorage.getItem("llm-wiki-side-topic-sort-state") || "null");
+        if (saved && typeof saved === "object") {
+          return normalizeSideTopicSortState(saved);
+        }
+      } catch {}
+      return normalizeSideTopicSortState(parseLegacySideTopicSortMode() || fallback);
+    }
+
+    function parseLegacySideTopicSortMode() {
+      const mode = localStorage.getItem("llm-wiki-side-topic-sort");
+      if (mode === "date-asc") return { date: "asc", alpha: "", order: ["date", "alpha"] };
+      if (mode === "date-desc") return { date: "desc", alpha: "", order: ["date", "alpha"] };
+      if (mode === "alpha-asc") return { date: "", alpha: "asc", order: ["alpha", "date"] };
+      if (mode === "alpha-desc") return { date: "", alpha: "desc", order: ["alpha", "date"] };
+      return null;
+    }
+
+    function normalizeSideTopicSortState(value) {
+      const state = {
+        date: value.date === "asc" || value.date === "desc" ? value.date : "",
+        alpha: value.alpha === "asc" || value.alpha === "desc" ? value.alpha : "",
+        order: Array.isArray(value.order) ? value.order.filter((key) => key === "date" || key === "alpha") : []
+      };
+      for (const key of ["date", "alpha"]) {
+        if (!state.order.includes(key)) state.order.push(key);
+      }
+      return state;
+    }
+
+    function saveSideTopicSortState() {
+      localStorage.setItem("llm-wiki-side-topic-sort-state", JSON.stringify(sideTopicSortState));
     }
 
     function normalizeTopicTitle(title) {

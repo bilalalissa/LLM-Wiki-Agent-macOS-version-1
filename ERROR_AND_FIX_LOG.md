@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-16 - Sidebar Sort Controls Needed Tri-State Multi-Sort
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The `Topics & Insights` sidebar used four separate sort buttons for date and alphabetical ordering.
+- **Cause:** Sidebar sorting was stored as one fixed mode, so date and alphabetical sorting could not both be active or independently released.
+- **Fix:** Replaced the four buttons with two tri-state buttons, `Date` and `A-Z`, each cycling through released, ascending, and descending. Active sorts can be combined, the most recently toggled sort is primary, and choices persist in `localStorage`.
+- **Verification:** `node --check src/server.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, and served HTML check for the new two-button sort controls.
+
 ## 2026-06-16 - Highlighting Needed Multiple Colors And Better Toolbar Order
 
 - **Area:** `src/server.mjs`
