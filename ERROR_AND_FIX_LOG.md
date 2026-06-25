@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-25 - Highlight Recovery, Section Badges, And Maximized Annotations
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Older UI-only highlights could disappear after redraws, parent Local result rows could show annotation badges inherited from nested sections, and maximized Local sections did not reliably show or wire note/highlight annotations.
+- **Cause:** Before highlight persistence existed, highlights only lived in the current DOM/cache. Local badge calculation used parent result text, and maximized mode copied section HTML without reapplying/rebinding persisted annotations.
+- **Fix:** Added automatic salvage for visible unpersisted highlights when the app snapshots a surface before redraw/navigation, limited parent Local badges so nested annotations only mark their exact section, and reapplied/rebound notes/highlights in maximized mode.
+- **Verification:** `node --check src/server.mjs`, `node --check src/notes.mjs`, `node --check src/topic-content.mjs`, app reinstall, served script syntax check, `/api/highlights` probe, served marker checks, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-25 - App UI Stopped Responding After Highlight Indicator Update
 
 - **Area:** `src/server.mjs`

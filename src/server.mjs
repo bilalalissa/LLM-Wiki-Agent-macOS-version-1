@@ -1712,6 +1712,7 @@ function renderHtml() {
     let notesCache = [];
     let highlightsCache = [];
     let highlightCache = {};
+    let persistedHighlightKeys = new Set();
     let notePopoverTimer = null;
     let sideTopicsCache = [];
     let filesCache = [];
@@ -2770,6 +2771,7 @@ function renderHtml() {
         const heading = details.querySelector(":scope > summary .local-result-heading");
         if (!heading) return;
         heading.querySelector(".annotation-badges")?.remove();
+        if (details.classList.contains("local-result") && details.querySelector(".local-nested")) return;
         const sourceRef = details.closest(".local-result")?.querySelector(".source-ref");
         const ref = parseSourceRefText(sourceRef?.textContent || "");
         const body = details.classList.contains("local-nested")
@@ -3522,6 +3524,7 @@ function renderHtml() {
         const data = await response.json();
         if (!response.ok || data.error) throw new Error(data.error || "Could not save highlight.");
         highlightsCache = [data.highlight, ...highlightsCache.filter((item) => item.id !== data.highlight.id)];
+        refreshPersistedHighlightKeys();
         updateAnnotationIndicators();
       } catch (error) {
         console.warn("Could not persist highlight", error);
@@ -3584,6 +3587,9 @@ function renderHtml() {
       const ref = parseSourceRefText(sourceRefText);
       if (ref.vault) snapText.dataset.noteVault = ref.vault;
       if (ref.path) snapText.dataset.notePath = ref.path;
+      rewireCopiedNoteIndicators(snapText);
+      applyHighlightAnnotations(snapText);
+      applyNoteAnnotations(snapText);
       applyMaximizedTextSize();
       snapOverlay.style.display = "flex";
     }
@@ -3883,6 +3889,7 @@ function renderHtml() {
         const notes = data.notes || [];
         notesCache = notes;
         highlightsCache = highlightsData.highlights || [];
+        refreshPersistedHighlightKeys();
         if (annotateResults) refreshResultAnnotations();
         renderNotesList();
         updateAnnotationIndicators();
@@ -3903,6 +3910,7 @@ function renderHtml() {
         if (highlightsData.error) throw new Error(highlightsData.error);
         notesCache = notesData.notes || [];
         highlightsCache = highlightsData.highlights || [];
+        refreshPersistedHighlightKeys();
         if (options.annotateResults !== false) refreshResultAnnotations();
         updateAnnotationIndicators();
       } catch {
@@ -4014,13 +4022,59 @@ function renderHtml() {
     function storeSurfaceHighlights(container) {
       const key = surfaceHighlightKey(container);
       if (!key) return;
-      highlightCache[key] = Array.from(container.querySelectorAll("mark.agent-highlight"))
+      const highlights = Array.from(container.querySelectorAll("mark.agent-highlight"))
         .map((mark) => ({
           text: mark.textContent || "",
           color: mark.dataset.highlightColor || "yellow",
-          occurrence: highlightOccurrence(container, mark)
+          occurrence: highlightOccurrence(container, mark),
+          ref: sourceRefForAnnotationNode(mark, container)
         }))
         .filter((item) => item.text.trim().length > 0);
+      highlightCache[key] = highlights;
+      persistVisibleSurfaceHighlights(highlights);
+    }
+
+    function persistVisibleSurfaceHighlights(highlights) {
+      for (const highlight of highlights) {
+        if (!highlight.ref?.vault || !highlight.ref?.path) continue;
+        const dedupe = annotationKey(highlight.ref.vault, highlight.ref.path) + "|" + highlight.text + "|" + highlight.occurrence + "|" + highlight.color;
+        if (persistedHighlightKeys.has(dedupe)) continue;
+        persistedHighlightKeys.add(dedupe);
+        fetch("/api/highlights", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            vault: highlight.ref.vault,
+            path: highlight.ref.path,
+            selectedText: highlight.text,
+            occurrence: highlight.occurrence,
+            color: highlight.color
+          })
+        })
+          .then((response) => response.ok ? response.json() : null)
+          .then((data) => {
+            if (!data?.highlight) return;
+            highlightsCache = [data.highlight, ...highlightsCache.filter((item) => item.id !== data.highlight.id)];
+            refreshPersistedHighlightKeys();
+            updateAnnotationIndicators();
+          })
+          .catch(() => {});
+      }
+    }
+
+    function refreshPersistedHighlightKeys() {
+      persistedHighlightKeys = new Set(highlightsCache.map((highlight) =>
+        annotationKey(highlight.vault, highlight.path) + "|" + String(highlight.selectedText || "") + "|" + Number(highlight.occurrence || 0) + "|" + (highlight.color || "yellow")
+      ));
+    }
+
+    function sourceRefForAnnotationNode(node, container) {
+      if (container === snapText && snapText.dataset.noteVault && snapText.dataset.notePath) {
+        return { vault: snapText.dataset.noteVault, path: snapText.dataset.notePath };
+      }
+      const localResult = node.closest?.(".local-result");
+      const sourceRef = localResult?.querySelector(".source-ref") || closestSourceRef(node, container);
+      return parseSourceRefText(sourceRef?.textContent || "");
     }
 
     function restoreSurfaceHighlights(container) {
