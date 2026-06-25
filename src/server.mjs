@@ -2817,7 +2817,7 @@ function renderHtml() {
     }
 
     function normalizeAnnotationPath(path) {
-      const rel = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+      const rel = String(path || "").replace(/\\\\/g, "/").replace(/^\\/+/, "");
       return rel.endsWith(".md") ? rel.slice(0, -3) : rel;
     }
 
