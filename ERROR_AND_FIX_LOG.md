@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-25 - Sidebar Toggle Needed Top-Edge Chevron Controls
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The sidebar hide/show controls used `×` and `☰` glyphs and appeared in awkward positions instead of a small edge toggle near the top of the app.
+- **Cause:** The previous sidebar toggle styling positioned the visible-sidebar button lower on the sidebar edge and the restore button lower in the main header area.
+- **Fix:** Changed the controls to `>>` for hiding the right sidebar and `<<` for restoring it, with compact fixed positioning about 16px from the top app edge.
+- **Verification:** `node --check src/server.mjs`, app reinstall/open, served HTML/CSS marker check for `>>`/`<<` and 16px top positioning, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-25 - Highlight Recovery, Section Badges, And Maximized Annotations
 
 - **Area:** `src/server.mjs`

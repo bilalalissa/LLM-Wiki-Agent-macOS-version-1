@@ -1226,9 +1226,9 @@ function renderHtml() {
     body.sidebar-hidden main { margin-right: 0; }
     .side-topic-header { display: block; margin-bottom: 10px; padding-right: 18px; }
     .side-topics h2 { margin: 0; font-size: 15px; }
-    .side-topic-toggle, .side-topic-restore { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 34px; padding: 0; font-size: 17px; line-height: 1; border-radius: 6px 0 0 6px; box-shadow: 0 8px 18px var(--shadow); }
-    .side-topic-toggle { position: absolute; top: 58px; left: -29px; z-index: 19; }
-    .side-topic-restore { position: fixed; top: 118px; right: 20px; z-index: 18; }
+    .side-topic-toggle, .side-topic-restore { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 30px; padding: 0; font-size: 13px; font-weight: 800; letter-spacing: 0; line-height: 1; border-radius: 6px 0 0 6px; box-shadow: 0 8px 18px var(--shadow); }
+    .side-topic-toggle { position: fixed; top: 16px; right: 360px; z-index: 19; }
+    .side-topic-restore { position: fixed; top: 16px; right: 20px; z-index: 18; border-radius: 6px; }
     .side-topic-restore.hidden, .side-topics.hidden { display: none; }
     .side-topic-search-row { display: flex; gap: 6px; margin-bottom: 10px; }
     .side-topic-search { min-width: 0; width: 100%; box-sizing: border-box; padding: 9px 10px; }
@@ -1308,8 +1308,8 @@ function renderHtml() {
     @media (max-width: 1240px) {
       main { margin-right: 0; padding-right: 20px; }
       .side-topics { position: relative; width: auto; max-height: 220px; margin: 0 20px 20px; border-top: 1px solid var(--line); border-radius: 6px; overflow: visible; }
-      .side-topic-toggle { top: 14px; left: auto; right: -1px; border-radius: 0 6px 0 6px; }
-      .side-topic-restore { top: auto; bottom: 20px; right: 20px; }
+      .side-topic-toggle { top: 16px; left: auto; right: 20px; border-radius: 6px; }
+      .side-topic-restore { top: 16px; bottom: auto; right: 20px; }
     }
   </style>
 </head>
@@ -1536,7 +1536,7 @@ function renderHtml() {
     <div class="side-topic-controls">
       <div class="side-topic-header">
         <h2>Topics & Insights</h2>
-        <button id="side-topic-hide" class="secondary side-topic-toggle" type="button" title="Hide sidebar" aria-label="Hide sidebar">×</button>
+        <button id="side-topic-hide" class="secondary side-topic-toggle" type="button" title="Hide sidebar" aria-label="Hide sidebar">&gt;&gt;</button>
       </div>
       <div id="side-topic-tools" class="side-topic-tools">
         <div class="side-topic-search-row">
@@ -1559,7 +1559,7 @@ function renderHtml() {
     </div>
     <div id="topic-list" class="muted">Loading...</div>
   </aside>
-  <button id="side-topic-show" class="secondary side-topic-restore hidden" type="button" title="Show sidebar" aria-label="Show sidebar">☰</button>
+  <button id="side-topic-show" class="secondary side-topic-restore hidden" type="button" title="Show sidebar" aria-label="Show sidebar">&lt;&lt;</button>
   <div id="selection-toolbar" class="selection-toolbar">
     <div class="highlight-swatches" aria-label="Highlight color">
       <button class="highlight-swatch highlight-yellow" type="button" data-highlight-color="yellow" title="Yellow highlight" aria-label="Yellow highlight"></button>
