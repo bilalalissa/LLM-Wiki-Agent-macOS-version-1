@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-25 - Sidebar Toggle Needed Single-Chevron Top Placement
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The sidebar toggle still used double chevrons and sat farther from the app page top than requested.
+- **Cause:** The previous refinement used `>>`/`<<` labels and a 16px top offset.
+- **Fix:** Changed the sidebar controls to single `>` and `<` chevrons and moved both controls to a 5px top offset.
+- **Verification:** `node --check src/server.mjs`, app reinstall/open, served HTML/CSS marker check for `<`/`>` and `top: 5px`, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-25 - Sidebar Toggle Needed Top-Edge Chevron Controls
 
 - **Area:** `src/server.mjs`
