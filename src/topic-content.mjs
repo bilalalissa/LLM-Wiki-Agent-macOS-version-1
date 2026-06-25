@@ -93,6 +93,7 @@ function findSourcePagesMentioning(vaultPath, topicRel, topicTitle) {
 function cleanForDisplay(markdown) {
   return markdown
     .replace(/^---[\s\S]*?---\s*/m, "")
+    .replace(/\n## User Highlights[\s\S]*?(?=\n## User Notes|\n##\s+[^U]|$)/m, "")
     .replace(/\n## User Notes[\s\S]*$/m, "")
     .trim();
 }

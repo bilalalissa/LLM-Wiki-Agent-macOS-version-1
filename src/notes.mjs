@@ -4,6 +4,8 @@ import { listVaults, listWikiFiles, slugify, vaultName } from "./vaults.mjs";
 
 const START = "<!-- agent-note:";
 const END = "<!-- /agent-note:";
+const HIGHLIGHT_START = "<!-- agent-highlight:";
+const HIGHLIGHT_END = "<!-- /agent-highlight:";
 
 export function listNotes(config) {
   const notes = [];
@@ -16,6 +18,19 @@ export function listNotes(config) {
     }
   }
   return notes.sort((a, b) => b.updated.localeCompare(a.updated));
+}
+
+export function listHighlights(config) {
+  const highlights = [];
+  for (const vaultPath of listVaults(config.vaultsRoot)) {
+    for (const file of listWikiFiles(vaultPath)) {
+      const relativePath = path.relative(vaultPath, file);
+      if (!relativePath.startsWith(`wiki${path.sep}`)) continue;
+      const text = fs.readFileSync(file, "utf8");
+      highlights.push(...parseHighlights(text, vaultName(vaultPath), relativePath));
+    }
+  }
+  return highlights.sort((a, b) => b.updated.localeCompare(a.updated));
 }
 
 export async function listNotesAsync(config) {
@@ -32,6 +47,34 @@ export async function listNotesAsync(config) {
     await yieldToEventLoop();
   }
   return notes.sort((a, b) => b.updated.localeCompare(a.updated));
+}
+
+export function addHighlight(config, input) {
+  const target = resolveTarget(config, input.vault, input.path);
+  const selectedText = singleLine(input.selectedText || input.text);
+  if (!selectedText) throw new Error("Highlight text is required.");
+  const occurrence = Number(input.occurrence || 0);
+  const color = safeHighlightColor(input.color);
+  const existing = fs.existsSync(target.file) ? fs.readFileSync(target.file, "utf8") : `# Agent UI Notes\n`;
+  const current = parseHighlights(existing, target.vault, target.relativePath)
+    .find((item) => item.selectedText === selectedText && Number(item.occurrence || 0) === occurrence);
+  const now = new Date().toISOString();
+  const highlight = {
+    id: current?.id || `highlight-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    selectedText,
+    color,
+    occurrence,
+    created: current?.created || now,
+    updated: now
+  };
+  const block = renderHighlightBlock(highlight);
+  const next = current
+    ? replaceHighlightBlock(existing, current.id, block)
+    : existing.includes("## User Highlights")
+      ? `${existing.trim()}\n\n${block}\n`
+      : `${existing.trim()}\n\n## User Highlights\n\n${block}\n`;
+  fs.writeFileSync(target.file, next);
+  return { ...highlight, vault: target.vault, path: target.relativePath };
 }
 
 export function addNote(config, input) {
@@ -159,6 +202,26 @@ function parseNotes(text, vault, relativePath) {
   return notes;
 }
 
+function parseHighlights(text, vault, relativePath) {
+  const highlights = [];
+  const regex = /<!-- agent-highlight:([^ ]+) -->([\s\S]*?)<!-- \/agent-highlight:\1 -->/g;
+  let match;
+  while ((match = regex.exec(text))) {
+    const body = match[2];
+    highlights.push({
+      id: match[1],
+      vault,
+      path: relativePath,
+      selectedText: field(body, "Selected"),
+      color: safeHighlightColor(field(body, "Color")),
+      occurrence: Number(field(body, "Occurrence") || 0),
+      created: field(body, "Created"),
+      updated: field(body, "Updated")
+    });
+  }
+  return highlights;
+}
+
 function field(body, label) {
   const match = body.match(new RegExp(`^> \\*\\*${label}:\\*\\*\\s*([\\s\\S]*?)(?=\\n> \\*\\*|$)`, "m"));
   return match ? match[1].replace(/^> /gm, "").trim() : "";
@@ -176,13 +239,34 @@ ${quoteBlock(note.note)}
 ${END}${note.id} -->`;
 }
 
+function renderHighlightBlock(highlight) {
+  return `${HIGHLIGHT_START}${highlight.id} -->
+> [!tip] Agent UI highlight
+> **Selected:** ${singleLine(highlight.selectedText)}
+> **Color:** ${safeHighlightColor(highlight.color)}
+> **Occurrence:** ${Number(highlight.occurrence || 0)}
+> **Created:** ${highlight.created}
+> **Updated:** ${highlight.updated}
+${HIGHLIGHT_END}${highlight.id} -->`;
+}
+
 function replaceBlock(text, id, replacement) {
   const regex = new RegExp(`<!-- agent-note:${escapeRegExp(id)} -->[\\s\\S]*?<!-- /agent-note:${escapeRegExp(id)} -->`);
   return text.replace(regex, replacement);
 }
 
+function replaceHighlightBlock(text, id, replacement) {
+  const regex = new RegExp(`<!-- agent-highlight:${escapeRegExp(id)} -->[\\s\\S]*?<!-- /agent-highlight:${escapeRegExp(id)} -->`);
+  return text.replace(regex, replacement);
+}
+
 function cleanupEmptyUserNotes(text) {
   return text.replace(/\n*## User Notes\s*$/, "");
+}
+
+function safeHighlightColor(value) {
+  const color = String(value || "").trim().toLowerCase();
+  return ["yellow", "green", "blue", "pink"].includes(color) ? color : "yellow";
 }
 
 function singleLine(value) {

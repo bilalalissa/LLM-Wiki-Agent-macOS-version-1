@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-25 - Highlights Needed Persistent Source Links And Annotation Indicators
+
+- **Area:** `src/notes.mjs`, `src/server.mjs`, `src/topic-content.mjs`
+- **Symptom:** Highlights were visible only in the current UI surface, Local sections and sidebar topics did not indicate notes/highlights, and Notes tab entries did not provide a direct way to jump back to related content.
+- **Cause:** Notes were persisted into target markdown files, but highlights were only stored in client-side render caches. Sidebar/local rendering also did not compare visible content against note/highlight metadata.
+- **Fix:** Added persisted `agent-highlight` blocks and `/api/highlights`, restored persisted highlights when source content is shown, added `N`/`H` and `Open` badges to Local/sidebar topic displays, and added Notes tab actions to open related content in Local or filter it in Files.
+- **Verification:** `node --check src/server.mjs`, `node --check src/notes.mjs`, `node --check src/topic-content.mjs`, `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`, app reinstall, served `/api/highlights` and UI marker checks, and an isolated `/tmp` vault highlight write/read probe.
+
 ## 2026-06-16 - Intel macOS DMG Build Artifact Needed
 
 - **Area:** `scripts/build_macos_app.sh`, `scripts/build_macos_dmg.sh`

@@ -12,7 +12,7 @@ import { saveChatAsRawSource } from "./chat-source.mjs";
 import { preflightBrowserClip, saveBrowserClip } from "./clip.mjs";
 import { ingestVault } from "./ingest-lib.mjs";
 import { answerLocally } from "./local-answer.mjs";
-import { addNote, deleteNote, listNotes, saveNoteMedia, updateNote } from "./notes.mjs";
+import { addHighlight, addNote, deleteNote, listHighlights, listNotes, saveNoteMedia, updateNote } from "./notes.mjs";
 import { createProvider } from "./provider.mjs";
 import { providerStatus } from "./provider-status.mjs";
 import { preflightStatus } from "./preflight.mjs";
@@ -359,6 +359,30 @@ const server = http.createServer(async (request, response) => {
     refreshNotesCache();
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify(cachedTabPayload("notes")));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/highlights") {
+    try {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ highlights: listHighlights(config) }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/highlights") {
+    try {
+      const body = await readBody(request);
+      const highlight = addHighlight(config, JSON.parse(body || "{}"));
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ highlight }));
+    } catch (error) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    }
     return;
   }
 
@@ -1156,12 +1180,21 @@ function renderHtml() {
     .local-result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .local-result-title, .local-nested-title { min-width: 0; }
     .local-section-tools { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto; flex: 0 0 auto; }
-    .local-copy-button { font: inherit; font-size: 12px; line-height: 1; min-width: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
-    .local-copy-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .local-copy-button, .local-maximize-button { font: inherit; font-size: 12px; line-height: 1; min-width: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+    .local-maximize-button { font-weight: 700; color: var(--accent); }
+    .local-copy-button:focus-visible, .local-maximize-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
     .dir-button { font: inherit; font-size: 11px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 3px 6px; cursor: pointer; }
     .dir-button:hover, .dir-button.active { color: var(--text); border-color: var(--accent); background: var(--soft); }
     .local-result-count { color: var(--muted); font-size: 12px; font-weight: 500; margin-left: 6px; }
+    .tag-style-controls { display: inline-flex; align-items: center; gap: 4px; }
+    .tag-style-button { font: inherit; font-size: 12px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 5px 8px; cursor: pointer; }
+    .tag-style-button.active { color: var(--accent-text); border-color: var(--accent); background: var(--accent); }
+    .tag-token { color: inherit; font: inherit; }
+    body[data-tag-style="highlight"] .tag-token { color: #111827; background: var(--mark); border-radius: 4px; padding: 0 4px; font-weight: 700; }
+    body[data-tag-style="pill"] .tag-token { display: inline-block; color: var(--accent); background: var(--soft); border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 999px; padding: 1px 7px; font-size: 0.92em; font-weight: 700; line-height: 1.35; }
+    body[data-tag-style="underline"] .tag-token { color: var(--accent); font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+    body[data-tag-style="off"] .tag-token { color: inherit; background: transparent; border: 0; border-radius: 0; padding: 0; font: inherit; text-decoration: none; }
     mark.agent-highlight { background: var(--highlight-color, var(--mark)); color: #111827; border-radius: 2px; padding: 0 2px; }
     mark.agent-highlight[data-highlight-color="yellow"] { --highlight-color: #fff2a8; }
     mark.agent-highlight[data-highlight-color="green"] { --highlight-color: #c7f2a7; }
@@ -1207,6 +1240,14 @@ function renderHtml() {
     .side-topic-sort button { border: 1px solid var(--line); background: var(--panel); text-align: center; padding: 6px 4px; font-size: 12px; font-weight: 700; }
     .side-topic-sort button.active { border-color: var(--accent); background: var(--soft); color: var(--accent); }
     .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .side-topic-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .side-topic-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .annotation-badges { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+    .annotation-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; border: 1px solid var(--line); background: var(--soft); color: var(--muted); font-size: 10px; font-weight: 800; line-height: 1; }
+    .annotation-badge.note { color: var(--accent); }
+    .annotation-badge.highlight { color: #111827; background: #fff2a8; }
+    .annotation-badge.active { color: var(--accent-text); background: var(--accent); border-color: var(--accent); }
+    .local-result-heading .annotation-badges { margin-inline-start: auto; }
     #topic-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 10px; }
     .side-topics button:not(.side-topic-toggle) { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
     .side-topics button:hover { background: var(--soft); }
@@ -1217,7 +1258,7 @@ function renderHtml() {
     .status-dot.orange { background: #f59e0b; }
     .status-dot.red { background: #dc2626; }
     .status-dot.grey { background: #9ca3af; }
-    .selection-toolbar { position: fixed; display: none; z-index: 20; align-items: center; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 24px); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
+    .selection-toolbar { position: fixed; display: none; z-index: 60; align-items: center; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 24px); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 6px; }
     .highlight-swatches { display: inline-flex; align-items: center; gap: 4px; padding-right: 2px; }
     .highlight-swatch { width: 28px; height: 28px; min-width: 28px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.62); }
     .highlight-swatch:hover, .highlight-swatch:focus-visible { border-color: var(--accent); outline: none; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.72), 0 0 0 2px var(--soft); }
@@ -1230,11 +1271,24 @@ function renderHtml() {
     .snap-text { white-space: pre-wrap; line-height: 1.45; font-size: var(--snap-size, 34px); font-weight: 750; letter-spacing: 0; }
     .snap-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: #d8f7ff; }
     .snap-controls input { flex: 0 1 260px; accent-color: #70e6ff; }
+    .snap-overlay.maximized { align-items: stretch; justify-content: stretch; background: var(--bg); padding: 0; }
+    .snap-overlay.maximized .snap-box { width: 100%; max-height: none; height: 100%; box-sizing: border-box; overflow: auto; background: var(--bg); color: var(--text); border: 0; border-radius: 0; box-shadow: none; animation: none; padding: 18px 24px; }
+    .snap-overlay.maximized .snap-controls { position: sticky; top: 0; z-index: 1; color: var(--text); background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); padding: 0 0 12px; }
+    .snap-overlay.maximized .snap-controls label { display: none; }
+    .maximized-text-controls { display: none; align-items: center; gap: 6px; margin-left: auto; }
+    .maximized-text-controls button { min-width: 34px; }
+    .snap-overlay.maximized .maximized-text-controls { display: inline-flex; }
+    .maximized-tag-controls { display: none; align-items: center; gap: 4px; }
+    .snap-overlay.maximized .maximized-tag-controls { display: inline-flex; }
+    .snap-overlay.maximized .snap-text { max-width: 980px; margin: 0 auto; white-space: normal; line-height: 1.5; font-size: var(--maximized-size, 15px); font-weight: 400; }
+    .snap-overlay.maximized .snap-text h1, .snap-overlay.maximized .snap-text h2, .snap-overlay.maximized .snap-text h3 { margin: 16px 0 8px; }
+    .snap-overlay.maximized .snap-text p { margin: 0 0 12px; }
+    .snap-overlay.maximized .snap-text ul, .snap-overlay.maximized .snap-text ol { padding-inline-start: 1.4em; }
     @keyframes snap-spark {
       0%, 100% { border-color: var(--snap-border, #70e6ff); box-shadow: 0 0 20px color-mix(in srgb, var(--snap-border, #70e6ff) 50%, transparent), inset 0 0 18px rgba(255, 255, 255, 0.08); }
       50% { border-color: #ffffff; box-shadow: 0 0 36px rgba(255, 255, 255, 0.72), 0 0 54px rgba(57, 213, 255, 0.38), inset 0 0 24px rgba(112, 230, 255, 0.12); }
     }
-    .note-editor { display: none; position: fixed; z-index: 21; width: min(460px, calc(100vw - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; }
+    .note-editor { display: none; position: fixed; z-index: 61; width: min(460px, calc(100vw - 24px)); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 12px 30px var(--shadow); padding: 10px; }
     .note-tools { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 6px; align-items: center; margin-top: 8px; }
     .note-tools input { min-width: 0; }
     .note-media-label { display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; cursor: pointer; }
@@ -1336,6 +1390,13 @@ function renderHtml() {
             <option value="html">Formatted text</option>
             <option value="markdown">Markdown</option>
           </select>
+          <span class="muted">Tags</span>
+          <span class="tag-style-controls" aria-label="Tag style">
+            <button class="tag-style-button" type="button" data-tag-style="highlight">Highlight</button>
+            <button class="tag-style-button" type="button" data-tag-style="pill">Pill</button>
+            <button class="tag-style-button" type="button" data-tag-style="underline">Underline</button>
+            <button class="tag-style-button" type="button" data-tag-style="off">Off</button>
+          </span>
           <button id="copy-local" class="secondary" type="button">Copy</button>
           <span id="local-copy-feedback" class="copy-feedback"></span>
         </div>
@@ -1530,12 +1591,23 @@ function renderHtml() {
   </div>
   <div id="note-popover" class="note-popover" role="note"></div>
   <div id="snap-overlay" class="snap-overlay">
-    <div class="snap-box">
-      <div class="snap-controls">
-        <strong>Snap</strong>
-        <label>Size <input id="snap-size" type="range" min="24" max="72" value="34"></label>
-        <button id="snap-close" class="secondary" type="button">Close</button>
-      </div>
+      <div class="snap-box">
+        <div class="snap-controls">
+          <strong id="snap-title">Snap</strong>
+          <span class="maximized-text-controls" aria-label="Maximized text size">
+            <button id="maximized-text-smaller" class="secondary" type="button" title="Make text smaller">A-</button>
+            <button id="maximized-text-larger" class="secondary" type="button" title="Make text larger">A+</button>
+          </span>
+          <span class="maximized-tag-controls" aria-label="Tag style">
+            <span class="muted">Tags</span>
+            <button class="tag-style-button" type="button" data-tag-style="highlight">Highlight</button>
+            <button class="tag-style-button" type="button" data-tag-style="pill">Pill</button>
+            <button class="tag-style-button" type="button" data-tag-style="underline">Underline</button>
+            <button class="tag-style-button" type="button" data-tag-style="off">Off</button>
+          </span>
+          <label>Size <input id="snap-size" type="range" min="24" max="72" value="34"></label>
+          <button id="snap-close" class="secondary" type="button">Close</button>
+        </div>
       <div id="snap-text" class="snap-text"></div>
     </div>
   </div>
@@ -1623,17 +1695,22 @@ function renderHtml() {
     const noteMedia = document.querySelector("#note-media");
     const noteMediaFeedback = document.querySelector("#note-media-feedback");
     const snapOverlay = document.querySelector("#snap-overlay");
+    const snapTitle = document.querySelector("#snap-title");
     const snapText = document.querySelector("#snap-text");
     const snapSize = document.querySelector("#snap-size");
     const snapClose = document.querySelector("#snap-close");
+    const maximizedTextSmaller = document.querySelector("#maximized-text-smaller");
+    const maximizedTextLarger = document.querySelector("#maximized-text-larger");
     const notesList = document.querySelector("#notes-list");
     const refreshNotes = document.querySelector("#refresh-notes");
     const noteDisplayMode = document.querySelector("#note-display-mode");
+    const tagStyleButtons = document.querySelectorAll(".tag-style-button");
     let lastChatMarkdown = "";
     let lastLocalMarkdown = "";
     let selectedInfo = null;
     let selectedRange = null;
     let notesCache = [];
+    let highlightsCache = [];
     let highlightCache = {};
     let notePopoverTimer = null;
     let sideTopicsCache = [];
@@ -1644,6 +1721,7 @@ function renderHtml() {
     let sideTopicsLoading = false;
     let sideTopicsUpdatedAt = "";
     let sideTopicSortState = loadSideTopicSortState();
+    let currentMaximizedSource = null;
     const tableSelection = {
       files: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" },
       archives: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" }
@@ -1673,6 +1751,12 @@ function renderHtml() {
       refreshResultAnnotations();
     });
 
+    const savedTagStyle = localStorage.getItem("llm-wiki-tag-style") || "highlight";
+    setTagStyle(savedTagStyle);
+    tagStyleButtons.forEach((button) => {
+      button.addEventListener("click", () => setTagStyle(button.dataset.tagStyle || "highlight"));
+    });
+
     const savedSnapSize = localStorage.getItem("llm-wiki-snap-size") || "34";
     snapSize.value = savedSnapSize;
     snapOverlay.style.setProperty("--snap-size", savedSnapSize + "px");
@@ -1680,6 +1764,10 @@ function renderHtml() {
       snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
       localStorage.setItem("llm-wiki-snap-size", snapSize.value);
     });
+    let maximizedTextSize = Number(localStorage.getItem("llm-wiki-maximized-text-size") || 15);
+    applyMaximizedTextSize();
+    maximizedTextSmaller.addEventListener("click", () => adjustMaximizedTextSize(-1));
+    maximizedTextLarger.addEventListener("click", () => adjustMaximizedTextSize(1));
     snapClose.addEventListener("click", closeSnap);
     snapOverlay.addEventListener("click", (event) => {
       if (event.target === snapOverlay) closeSnap();
@@ -1731,7 +1819,9 @@ function renderHtml() {
         answer.innerHTML = renderMarkdown(lastChatMarkdown);
         applyAutoDirection(answer);
         selectCitedVault(lastChatMarkdown);
+        applyHighlightAnnotations(answer);
         applyNoteAnnotations(answer);
+        updateAnnotationIndicators();
       } catch (error) {
         answer.textContent = error.message;
       } finally {
@@ -2156,6 +2246,10 @@ function renderHtml() {
     function titleFromPath(value) {
       const base = String(value).split("/").pop().replace(/\\.[^.]+$/, "").replace(/^\\d{4}-\\d{2}-\\d{2}--/, "");
       return base.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") || "Renamed source";
+    }
+
+    function pathBasename(value) {
+      return String(value || "").split("/").pop().replace(/\\.[^.]+$/, "");
     }
 
     function populateSelect(select, values, label) {
@@ -2666,6 +2760,67 @@ function renderHtml() {
       renderSideTopics();
     }
 
+    function updateAnnotationIndicators() {
+      markLocalAnnotationBadges();
+      if (sideTopicsLoaded) renderSideTopics();
+    }
+
+    function markLocalAnnotationBadges() {
+      localAnswer.querySelectorAll(".local-result, .local-nested").forEach((details) => {
+        const heading = details.querySelector(":scope > summary .local-result-heading");
+        if (!heading) return;
+        heading.querySelector(".annotation-badges")?.remove();
+        const sourceRef = details.closest(".local-result")?.querySelector(".source-ref");
+        const ref = parseSourceRefText(sourceRef?.textContent || "");
+        const body = details.classList.contains("local-nested")
+          ? details.querySelector(".local-nested-body")
+          : details.querySelector(".local-result-body");
+        const summary = annotationSummaryForPath(ref.vault, ref.path, body?.innerText || "");
+        heading.insertAdjacentHTML("beforeend", renderAnnotationBadges(summary));
+      });
+    }
+
+    function annotationSummaryForPath(vault, path, visibleText = "") {
+      const key = annotationKey(vault, path);
+      const text = String(visibleText || "").toLowerCase();
+      const notes = notesCache.filter((note) => annotationKey(note.vault, note.path) === key)
+        .filter((note) => !text || text.includes(String(note.selectedText || "").toLowerCase()));
+      const highlights = highlightsCache.filter((highlight) => annotationKey(highlight.vault, highlight.path) === key)
+        .filter((highlight) => !text || text.includes(String(highlight.selectedText || "").toLowerCase()));
+      return { notes: notes.length, highlights: highlights.length };
+    }
+
+    function renderAnnotationBadges({ notes = 0, highlights = 0, active = false } = {}) {
+      const badges = [];
+      if (active) badges.push('<span class="annotation-badge active" title="Open in a tab">Open</span>');
+      if (notes) badges.push('<span class="annotation-badge note" title="' + notes + ' note' + (notes === 1 ? "" : "s") + '">N</span>');
+      if (highlights) badges.push('<span class="annotation-badge highlight" title="' + highlights + ' highlight' + (highlights === 1 ? "" : "s") + '">H</span>');
+      return badges.length ? '<span class="annotation-badges">' + badges.join("") + '</span>' : "";
+    }
+
+    function activeContentKeys() {
+      const keys = new Set();
+      [answer, localAnswer, snapText].forEach((container) => {
+        container?.querySelectorAll?.(".source-ref").forEach((node) => {
+          const ref = parseSourceRefText(node.textContent || "");
+          if (ref.vault && ref.path) keys.add(annotationKey(ref.vault, ref.path));
+        });
+      });
+      if (snapText?.dataset?.noteVault && snapText?.dataset?.notePath) {
+        keys.add(annotationKey(snapText.dataset.noteVault, snapText.dataset.notePath));
+      }
+      return keys;
+    }
+
+    function annotationKey(vault, path) {
+      return String(vault || "").trim() + "|" + normalizeAnnotationPath(path);
+    }
+
+    function normalizeAnnotationPath(path) {
+      const rel = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+      return rel.endsWith(".md") ? rel.slice(0, -3) : rel;
+    }
+
     function renderSideTopics() {
       const query = sideTopicSearch.value.trim().toLowerCase();
       const selectedType = sideTopicType.value;
@@ -2688,9 +2843,13 @@ function renderHtml() {
         topicList.textContent = sideTopicsCache.length ? "No matching topics." : "No topics yet.";
         return;
       }
-      topicList.innerHTML = groupedTopics.map((group) =>
-        '<button type="button" data-title="' + escapeHtml(group.topic.title) + '" data-vault="' + escapeHtml(group.topic.vault) + '" data-path="' + escapeHtml(group.topic.path) + '" title="' + escapeHtml(group.title) + '">' + escapeHtml(group.topic.title) + '<span class="side-topic-meta">' + escapeHtml(group.meta) + '</span></button>'
-      ).join("");
+      topicList.innerHTML = groupedTopics.map((group) => {
+        const annotations = annotationSummaryForPath(group.topic.vault, group.topic.path);
+        const active = activeContentKeys().has(annotationKey(group.topic.vault, group.topic.path));
+        return '<button type="button" data-title="' + escapeHtml(group.topic.title) + '" data-vault="' + escapeHtml(group.topic.vault) + '" data-path="' + escapeHtml(group.topic.path) + '" title="' + escapeHtml(group.title) + '">' +
+          '<span class="side-topic-title-row"><span class="side-topic-title-text">' + escapeHtml(group.topic.title) + '</span>' + renderAnnotationBadges({ ...annotations, active }) + '</span>' +
+          '<span class="side-topic-meta">' + escapeHtml(group.meta) + '</span></button>';
+      }).join("");
       topicList.querySelectorAll("button").forEach((item) => {
         item.addEventListener("click", () => openSideTopic(item));
       });
@@ -2980,10 +3139,19 @@ function renderHtml() {
       }
       applyAutoDirection(localAnswer);
       restoreSurfaceHighlights(localAnswer);
+      applyHighlightAnnotations(localAnswer);
       applyNoteAnnotations(localAnswer);
+      updateAnnotationIndicators();
     }
 
     localAnswer.addEventListener("click", (event) => {
+      const maximizeButton = event.target.closest?.(".local-maximize-button");
+      if (maximizeButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        maximizeLocalSection(maximizeButton);
+        return;
+      }
       const copyButton = event.target.closest?.(".local-copy-button");
       if (copyButton) {
         event.preventDefault();
@@ -3007,6 +3175,20 @@ function renderHtml() {
       setNodeDirection(title, dir, align);
       body?.querySelectorAll("p, li, h1, h2, h3, h4").forEach((item) => setNodeDirection(item, dir, align));
     });
+
+    function maximizeLocalSection(button) {
+      const nested = button.closest(".local-nested");
+      const details = nested || button.closest(".local-result");
+      if (!details) return;
+      const body = nested ? details.querySelector(".local-nested-body") : details.querySelector(".local-result-body");
+      const title = nested ? details.querySelector(".local-nested-title") : details.querySelector(".local-result-title");
+      const sourceRef = details.closest(".local-result")?.querySelector(".source-ref");
+      const titleText = title?.innerText?.trim() || "Local section";
+      const bodyHtml = body?.innerHTML || "";
+      currentMaximizedSource = { body };
+      const html = '<h1>' + escapeHtml(titleText) + '</h1><div id="maximized-section-body">' + bodyHtml + '</div>';
+      if (bodyHtml.trim()) openMaximizedSection(html, titleText, sourceRef?.textContent || "");
+    }
 
     async function copyLocalSection(button) {
       const nested = button.closest(".local-nested");
@@ -3168,6 +3350,7 @@ function renderHtml() {
 
     function renderLocalCopyControls() {
       return '<span class="local-section-tools" aria-label="Copy this local section">' +
+        '<button class="local-maximize-button" type="button" title="Maximize this section">Maximize</button>' +
         '<button class="local-copy-button" type="button" data-format="text" title="Copy section as plain text">Txt</button>' +
         '<button class="local-copy-button" type="button" data-format="markdown" title="Copy section as Markdown">MD</button>' +
       '</span>';
@@ -3218,6 +3401,17 @@ function renderHtml() {
       };
     }
 
+    function setTagStyle(style) {
+      const next = ["highlight", "pill", "underline", "off"].includes(style) ? style : "highlight";
+      document.body.dataset.tagStyle = next;
+      localStorage.setItem("llm-wiki-tag-style", next);
+      tagStyleButtons.forEach((button) => {
+        const active = button.dataset.tagStyle === next;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
     function inlineMarkdown(value) {
       return escapeHtml(value)
         .replace(/\\[\\[([^|\\]]+)\\|([^\\]]+)\\]\\]/g, "$2")
@@ -3225,7 +3419,8 @@ function renderHtml() {
         .replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>")
         .replace(/\\*([^*]+)\\*/g, "<em>$1</em>")
         .replace(/\\x60([^\\x60]+)\\x60/g, "<code>$1</code>")
-        .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, "$1");
+        .replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, "$1")
+        .replace(/(^|[\\s([{>"'])#([\\p{L}\\p{N}_-]+)/gu, '$1<span class="tag-token">#$2</span>');
     }
 
     function listItemClass(value) {
@@ -3255,7 +3450,7 @@ function renderHtml() {
       }
       const node = selection.anchorNode;
       const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-      const box = element?.closest?.(".answer");
+      const box = selectableSurfaceForElement(element);
       if (!box) return;
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
@@ -3285,8 +3480,8 @@ function renderHtml() {
       if (!selection || selection.isCollapsed) return;
       const range = selection.getRangeAt(0);
       const box = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
-        ? range.commonAncestorContainer.parentElement?.closest?.(".answer")
-        : range.commonAncestorContainer.closest?.(".answer");
+        ? selectableSurfaceForElement(range.commonAncestorContainer.parentElement)
+        : selectableSurfaceForElement(range.commonAncestorContainer);
       const existing = selectedHighlight(range) || closestHighlight(selection.anchorNode);
       if (existing) {
         if (color) {
@@ -3295,6 +3490,7 @@ function renderHtml() {
           unwrapHighlight(existing);
         }
         if (box) storeSurfaceHighlights(box);
+        if (color && selectedInfo) persistSelectedHighlight(color);
         selection.removeAllRanges();
         hideSelectionTools();
         return;
@@ -3310,8 +3506,26 @@ function renderHtml() {
         range.insertNode(mark);
       }
       if (box) storeSurfaceHighlights(box);
+      if (selectedInfo) persistSelectedHighlight(color);
       selection.removeAllRanges();
       hideSelectionTools();
+    }
+
+    async function persistSelectedHighlight(color) {
+      if (!selectedInfo || !color) return;
+      try {
+        const response = await fetch("/api/highlights", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...selectedInfo, selectedText: selectedInfo.text, color })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || "Could not save highlight.");
+        highlightsCache = [data.highlight, ...highlightsCache.filter((item) => item.id !== data.highlight.id)];
+        updateAnnotationIndicators();
+      } catch (error) {
+        console.warn("Could not persist highlight", error);
+      }
     }
     document.querySelector("#sel-snap").addEventListener("click", showSnap);
     document.querySelector("#sel-copy-text").addEventListener("click", () => copySelected("text"));
@@ -3347,12 +3561,49 @@ function renderHtml() {
         hideSelectionTools();
         return;
       }
+      openSnap(text, "Snap");
+      clearTextSelection();
+      hideSelectionTools();
+    }
+
+    function openSnap(text, title) {
+      snapOverlay.classList.remove("maximized");
+      snapTitle.textContent = title || "Snap";
       snapText.textContent = text;
       snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
       snapOverlay.style.setProperty("--snap-border", randomSnapColor());
       snapOverlay.style.display = "flex";
-      clearTextSelection();
-      hideSelectionTools();
+    }
+
+    function openMaximizedSection(html, title, sourceRefText = "") {
+      snapOverlay.classList.add("maximized");
+      snapTitle.textContent = title || "Maximized Section";
+      snapText.innerHTML = html;
+      snapText.dataset.noteVault = "";
+      snapText.dataset.notePath = "wiki/questions/agent-ui-notes.md";
+      const ref = parseSourceRefText(sourceRefText);
+      if (ref.vault) snapText.dataset.noteVault = ref.vault;
+      if (ref.path) snapText.dataset.notePath = ref.path;
+      applyMaximizedTextSize();
+      snapOverlay.style.display = "flex";
+    }
+
+    function parseSourceRefText(value) {
+      const parts = String(value || "").split("/").map((part) => part.trim()).filter(Boolean);
+      return {
+        vault: parts[0] || "",
+        path: parts.slice(1).join("/")
+      };
+    }
+
+    function adjustMaximizedTextSize(delta) {
+      maximizedTextSize = Math.min(28, Math.max(12, maximizedTextSize + delta));
+      localStorage.setItem("llm-wiki-maximized-text-size", String(maximizedTextSize));
+      applyMaximizedTextSize();
+    }
+
+    function applyMaximizedTextSize() {
+      snapOverlay.style.setProperty("--maximized-size", maximizedTextSize + "px");
     }
 
     function randomSnapColor() {
@@ -3361,16 +3612,44 @@ function renderHtml() {
     }
 
     function closeSnap() {
+      if (snapOverlay.classList.contains("maximized")) {
+        syncMaximizedSectionToSource();
+      }
       snapOverlay.style.display = "none";
-      snapText.textContent = "";
+      snapOverlay.classList.remove("maximized");
+      snapTitle.textContent = "Snap";
+      delete snapText.dataset.noteVault;
+      delete snapText.dataset.notePath;
+      snapText.replaceChildren();
+      currentMaximizedSource = null;
+    }
+
+    function syncMaximizedSectionToSource() {
+      const sourceBody = currentMaximizedSource?.body;
+      const maximizedBody = snapText.querySelector("#maximized-section-body");
+      if (!sourceBody || !maximizedBody) return;
+      sourceBody.innerHTML = maximizedBody.innerHTML;
+      rewireCopiedNoteIndicators(sourceBody);
+      storeSurfaceHighlights(localAnswer);
+    }
+
+    function rewireCopiedNoteIndicators(container) {
+      container.querySelectorAll(".note-indicator").forEach((indicator) => {
+        const note = notesCache.find((item) => item.id === indicator.dataset.noteId);
+        if (note) indicator.replaceWith(createNoteIndicator(note));
+      });
+      container.querySelectorAll(".note-anchor[data-note-id]").forEach((anchor) => {
+        const note = notesCache.find((item) => item.id === anchor.dataset.noteId);
+        if (note && document.body.dataset.noteDisplay === "tooltip") anchor.title = note.note;
+      });
     }
 
     function selectionInfo(selection, box) {
       const html = selectionHtml(selection);
       const text = selectionText(selection);
       const markdown = htmlToMarkdown(html) || text;
-      let vault = chatSaveVault.value || "";
-      let path = "wiki/questions/agent-ui-notes.md";
+      let vault = box.dataset.noteVault || chatSaveVault.value || "";
+      let path = box.dataset.notePath || "wiki/questions/agent-ui-notes.md";
       const ref = closestSourceRef(selection.anchorNode, box);
       if (ref) {
         const [refVault, ...rest] = ref.textContent.split("/");
@@ -3380,14 +3659,50 @@ function renderHtml() {
       return { text, html, markdown, vault, path, occurrence: selectionOccurrence(selection, box, text), surfaceId: box.id || "" };
     }
 
+    function selectableSurfaceForElement(element) {
+      return element?.closest?.(".answer, #snap-text");
+    }
+
+    function surfaceById(id) {
+      if (id === "local-answer") return localAnswer;
+      if (id === "answer") return answer;
+      if (id === "snap-text") return snapText;
+      return document.getElementById(id);
+    }
+
     function selectionOccurrence(selection, box, selectedText) {
       if (!selection.rangeCount || !selectedText) return 0;
       const range = selection.getRangeAt(0);
+      const preferredScope = annotationScope(box);
+      const scope = preferredScope.contains(range.startContainer) ? preferredScope : box;
       const before = document.createRange();
-      before.selectNodeContents(box);
+      before.selectNodeContents(scope);
       before.setEnd(range.startContainer, range.startOffset);
       const prefix = before.toString().toLowerCase();
       const needle = selectedText.toLowerCase();
+      let count = 0;
+      let index = prefix.indexOf(needle);
+      while (index !== -1) {
+        count += 1;
+        index = prefix.indexOf(needle, index + needle.length);
+      }
+      if (box === snapText && scope === preferredScope && currentMaximizedSource?.body && localAnswer.contains(currentMaximizedSource.body)) {
+        return occurrenceOffsetBefore(localAnswer, currentMaximizedSource.body, selectedText) + count;
+      }
+      return count;
+    }
+
+    function annotationScope(container) {
+      if (container === snapText) return snapText.querySelector("#maximized-section-body") || snapText;
+      return container;
+    }
+
+    function occurrenceOffsetBefore(container, beforeNode, selectedText) {
+      const before = document.createRange();
+      before.selectNodeContents(container);
+      before.setEndBefore(beforeNode);
+      const prefix = before.toString().toLowerCase();
+      const needle = String(selectedText || "").toLowerCase();
       let count = 0;
       let index = prefix.indexOf(needle);
       while (index !== -1) {
@@ -3414,7 +3729,7 @@ function renderHtml() {
       if (!selectedInfo || !noteText.value.trim()) return;
       const saveButton = document.querySelector("#note-save");
       const noteRange = selectedRange?.cloneRange?.();
-      const noteSurface = selectedInfo.surfaceId === "local-answer" ? localAnswer : answer;
+      const noteSurface = surfaceById(selectedInfo.surfaceId) || answer;
       const noteBody = noteText.value.trim();
       noteMediaFeedback.textContent = "Saving note...";
       if (saveButton) saveButton.disabled = true;
@@ -3437,6 +3752,7 @@ function renderHtml() {
         selectionToolbar.style.display = "none";
         noteMediaFeedback.textContent = annotated ? "Saved" : "Saved. Open Notes to view.";
         renderNotesList();
+        updateAnnotationIndicators();
         setTimeout(() => { noteMediaFeedback.textContent = ""; }, 1800);
       } catch (error) {
         noteMediaFeedback.textContent = error.message || "Could not save note.";
@@ -3551,20 +3867,46 @@ function renderHtml() {
       const annotateResults = options.annotateResults !== false;
       notesList.textContent = "Loading...";
       try {
-        const response = await fetch("/api/notes");
-        const data = await response.json();
+        const [notesResponse, highlightsResponse] = await Promise.all([
+          fetch("/api/notes"),
+          fetch("/api/highlights")
+        ]);
+        const data = await notesResponse.json();
+        const highlightsData = await highlightsResponse.json();
         if (data.loading && !(data.notes || []).length) {
           notesList.textContent = "Loading notes...";
           setTimeout(() => loadNotes(options), 1200);
           return;
         }
         if (data.error) throw new Error(data.error);
+        if (highlightsData.error) throw new Error(highlightsData.error);
         const notes = data.notes || [];
         notesCache = notes;
+        highlightsCache = highlightsData.highlights || [];
         if (annotateResults) refreshResultAnnotations();
         renderNotesList();
+        updateAnnotationIndicators();
       } catch (error) {
         notesList.textContent = error.message;
+      }
+    }
+
+    async function loadAnnotations(options = {}) {
+      try {
+        const [notesResponse, highlightsResponse] = await Promise.all([
+          fetch("/api/notes"),
+          fetch("/api/highlights")
+        ]);
+        const notesData = await notesResponse.json();
+        const highlightsData = await highlightsResponse.json();
+        if (notesData.error) throw new Error(notesData.error);
+        if (highlightsData.error) throw new Error(highlightsData.error);
+        notesCache = notesData.notes || [];
+        highlightsCache = highlightsData.highlights || [];
+        if (options.annotateResults !== false) refreshResultAnnotations();
+        updateAnnotationIndicators();
+      } catch {
+        // Keep existing annotations during transient loading errors.
       }
     }
 
@@ -3578,6 +3920,8 @@ function renderHtml() {
         '<p><strong>Selected:</strong> ' + escapeHtml(note.selectedText) + '</p>' +
         '<textarea class="note-edit">' + escapeHtml(note.note) + '</textarea>' +
         '<div class="note-row-actions">' +
+          '<button class="secondary note-open-local" type="button">Open in Local</button>' +
+          '<button class="secondary note-show-files" type="button">Show in Files</button>' +
           '<button class="secondary note-toggle" type="button">Hide</button>' +
           '<button class="secondary note-save-edit" type="button">Save</button>' +
           '<button class="secondary note-delete" type="button">Delete</button>' +
@@ -3590,6 +3934,13 @@ function renderHtml() {
     function wireNoteCard(card) {
       const id = card.dataset.id;
       const textarea = card.querySelector(".note-edit");
+      const note = notesCache.find((item) => item.id === id);
+      card.querySelector(".note-open-local").addEventListener("click", () => {
+        if (note) openNoteInLocal(note);
+      });
+      card.querySelector(".note-show-files").addEventListener("click", () => {
+        if (note) showNoteInFiles(note);
+      });
       card.querySelector(".note-toggle").addEventListener("click", (event) => {
         const hidden = textarea.style.display === "none";
         textarea.style.display = hidden ? "" : "none";
@@ -3620,12 +3971,39 @@ function renderHtml() {
       });
     }
 
+    async function openNoteInLocal(note) {
+      activateTab("local");
+      localInput.value = note.selectedText || titleFromPath(note.path || "note");
+      localAnswer.textContent = "Loading related content...";
+      try {
+        const params = new URLSearchParams({
+          vault: note.vault,
+          path: normalizeAnnotationPath(note.path),
+          title: titleFromPath(note.path || note.selectedText || "Note")
+        });
+        const response = await fetch("/api/topic-content?" + params.toString());
+        const data = await response.json();
+        lastLocalMarkdown = data.answer || data.error || "No related content.";
+        renderLocalResultBox();
+      } catch (error) {
+        localAnswer.textContent = error.message;
+      }
+    }
+
+    async function showNoteInFiles(note) {
+      activateTab("files");
+      filesFilter.value = pathBasename(note.path || note.selectedText || "");
+      if (!filesCache.length) await loadFiles();
+      renderFilesTable();
+    }
+
     function refreshResultAnnotations() {
       if (lastChatMarkdown) {
         storeSurfaceHighlights(answer);
         answer.innerHTML = renderMarkdown(lastChatMarkdown);
         applyAutoDirection(answer);
         restoreSurfaceHighlights(answer);
+        applyHighlightAnnotations(answer);
         applyNoteAnnotations(answer);
       }
       if (lastLocalMarkdown) {
@@ -3735,11 +4113,42 @@ function renderHtml() {
       }
     }
 
+    function applyHighlightAnnotations(container) {
+      for (const highlight of highlightsCache) {
+        if (!highlight.selectedText || highlight.selectedText.length < 3) continue;
+        if (!annotationAppliesToContainer(highlight, container)) continue;
+        annotateHighlightOccurrence(container, {
+          text: highlight.selectedText,
+          color: highlight.color || "yellow",
+          occurrence: highlight.occurrence || 0
+        });
+      }
+    }
+
     function applyNoteAnnotations(container) {
       for (const note of notesCache) {
         if (!note.selectedText || note.selectedText.length < 3) continue;
+        if (!annotationAppliesToContainer(note, container)) continue;
         annotateNoteOccurrence(container, note);
       }
+    }
+
+    function annotationAppliesToContainer(annotation, container) {
+      const keys = activeKeysForContainer(container);
+      if (!keys.size) return true;
+      return keys.has(annotationKey(annotation.vault, annotation.path));
+    }
+
+    function activeKeysForContainer(container) {
+      const keys = new Set();
+      container?.querySelectorAll?.(".source-ref").forEach((node) => {
+        const ref = parseSourceRefText(node.textContent || "");
+        if (ref.vault && ref.path) keys.add(annotationKey(ref.vault, ref.path));
+      });
+      if (container === snapText && snapText.dataset.noteVault && snapText.dataset.notePath) {
+        keys.add(annotationKey(snapText.dataset.noteVault, snapText.dataset.notePath));
+      }
+      return keys;
     }
 
     function annotateSavedNote(container, note, range) {
@@ -4121,6 +4530,7 @@ function renderHtml() {
 
     topicList.textContent = "Focus the search box or open Topics to load topics.";
     loadChatVaults();
+    loadAnnotations({ annotateResults: false });
     loadStatus();
     loadProviderStatus();
     setInterval(loadChatVaults, 10000);
