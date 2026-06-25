@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-25 - Closing Sub-Maximized Sections Exited The Reader
+
+- **Area:** `src/server.mjs`
+- **Symptom:** Clicking Close from a sub-maximized Local section exited the maximized reader and returned to the main app instead of the previous maximized section.
+- **Cause:** The maximized overlay stored only one active source/body, so opening a subsection replaced the parent view without retaining return state.
+- **Fix:** Added a maximized view stack that saves parent HTML, title, note metadata, source body, and scroll position before opening a nested maximized section. Close/Escape/background close now restores the previous maximized mode first, and only exits to the main app when no parent maximized view remains.
+- **Verification:** `node --check src/server.mjs`, app reinstall/open, served HTML marker checks for `maximizedViewStack`/restore helpers, extracted served script `node --check`, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-25 - Local Sections Needed Sticky Titles And Maximized Subsections
 
 - **Area:** `src/server.mjs`

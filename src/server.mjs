@@ -1743,6 +1743,7 @@ function renderHtml() {
     let sideTopicsUpdatedAt = "";
     let sideTopicSortState = loadSideTopicSortState();
     let currentMaximizedSource = null;
+    const maximizedViewStack = [];
     const tableSelection = {
       files: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" },
       archives: { selected: new Set(), visibleKeys: [], anchorKey: "", focusKey: "" }
@@ -3228,7 +3229,9 @@ function renderHtml() {
       const sourceRef = details.closest(".local-result")?.querySelector(".source-ref");
       const titleText = title?.innerText?.trim() || "Local section";
       const bodyHtml = body?.innerHTML || "";
+      const isNestedMaximize = snapText.contains(button) && snapOverlay.classList.contains("maximized");
       const sourceBody = sourceBodyForMaximizedButton(button, titleText, nested) || body;
+      if (isNestedMaximize) pushCurrentMaximizedView();
       currentMaximizedSource = { body: sourceBody };
       const html = '<h1>' + escapeHtml(titleText) + '</h1><div id="maximized-section-body">' + bodyHtml + '</div>';
       if (bodyHtml.trim()) openMaximizedSection(html, titleText, sourceRef?.textContent || "");
@@ -3703,6 +3706,7 @@ function renderHtml() {
     function openSnap(text, title) {
       snapOverlay.classList.remove("maximized");
       hideStickySectionTitle(maximizedStickyTitle);
+      maximizedViewStack.length = 0;
       snapTitle.textContent = title || "Snap";
       snapText.textContent = text;
       snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
@@ -3726,6 +3730,39 @@ function renderHtml() {
       snapOverlay.style.display = "flex";
       lastSnapScrollTop = 0;
       updateMaximizedStickySectionTitle();
+    }
+
+    function pushCurrentMaximizedView() {
+      maximizedViewStack.push({
+        title: snapTitle.textContent || "Maximized Section",
+        html: snapText.innerHTML,
+        noteVault: snapText.dataset.noteVault || "",
+        notePath: snapText.dataset.notePath || "wiki/questions/agent-ui-notes.md",
+        sourceBody: currentMaximizedSource?.body || null,
+        scrollTop: snapBox?.scrollTop || 0
+      });
+    }
+
+    function restorePreviousMaximizedView() {
+      const previous = maximizedViewStack.pop();
+      if (!previous) return false;
+      snapOverlay.classList.add("maximized");
+      snapOverlay.style.display = "flex";
+      snapTitle.textContent = previous.title || "Maximized Section";
+      snapText.innerHTML = previous.html || "";
+      snapText.dataset.noteVault = previous.noteVault || "";
+      snapText.dataset.notePath = previous.notePath || "wiki/questions/agent-ui-notes.md";
+      currentMaximizedSource = { body: previous.sourceBody };
+      rewireCopiedNoteIndicators(snapText);
+      applyHighlightAnnotations(snapText);
+      applyNoteAnnotations(snapText);
+      applyMaximizedTextSize();
+      requestAnimationFrame(() => {
+        if (snapBox) snapBox.scrollTop = previous.scrollTop || 0;
+        lastSnapScrollTop = snapBox?.scrollTop || 0;
+        updateMaximizedStickySectionTitle();
+      });
+      return true;
     }
 
     function parseSourceRefText(value) {
@@ -3754,6 +3791,7 @@ function renderHtml() {
     function closeSnap() {
       if (snapOverlay.classList.contains("maximized")) {
         syncMaximizedSectionToSource();
+        if (restorePreviousMaximizedView()) return;
       }
       snapOverlay.style.display = "none";
       snapOverlay.classList.remove("maximized");
@@ -3762,6 +3800,7 @@ function renderHtml() {
       delete snapText.dataset.notePath;
       snapText.replaceChildren();
       currentMaximizedSource = null;
+      maximizedViewStack.length = 0;
       hideStickySectionTitle(maximizedStickyTitle);
     }
 
