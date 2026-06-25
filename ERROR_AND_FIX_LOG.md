@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-25 - Local Sections Needed Sticky Titles And Maximized Subsections
+
+- **Area:** `src/server.mjs`
+- **Symptom:** While reading long Local results or maximized Local sections, users could lose the current section context, and copied subsection controls inside maximized mode were not active.
+- **Cause:** Local section headings were static inside the result flow, and the maximized overlay copied Local section controls without sharing the Local click handling.
+- **Fix:** Added a saved sticky-section-title preference exposed in Local and Files controls, added scroll-direction-aware sticky section badges for regular and maximized Local reading, and shared Local section actions so subsections can be maximized from maximized mode.
+- **Verification:** `node --check src/server.mjs`, app reinstall/open, served HTML marker checks for sticky controls and maximized subsection wiring, extracted served script `node --check`, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-25 - Sidebar Toggle Needed Single-Chevron Top Placement
 
 - **Area:** `src/server.mjs`

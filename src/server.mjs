@@ -1183,6 +1183,12 @@ function renderHtml() {
     .local-copy-button, .local-maximize-button { font: inherit; font-size: 12px; line-height: 1; min-width: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
     .local-maximize-button { font-weight: 700; color: var(--accent); }
     .local-copy-button:focus-visible, .local-maximize-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .inline-toggle { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .inline-toggle input { margin: 0; accent-color: var(--accent); }
+    .local-sticky-title { display: none; position: sticky; top: 102px; z-index: 13; align-items: center; max-width: 100%; min-height: 26px; box-sizing: border-box; margin: 0 0 8px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--panel) 94%, transparent); color: var(--muted); box-shadow: 0 8px 18px var(--shadow); backdrop-filter: blur(10px); font-size: 12px; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .local-sticky-title.visible { display: inline-flex; }
+    .local-sticky-title[data-direction="up"]::before { content: "Next"; margin-right: 6px; color: var(--accent); font-size: 10px; text-transform: uppercase; letter-spacing: 0; }
+    .local-sticky-title[data-direction="down"]::before { content: "Current"; margin-right: 6px; color: var(--accent); font-size: 10px; text-transform: uppercase; letter-spacing: 0; }
     .dir-controls { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
     .dir-button { font: inherit; font-size: 11px; line-height: 1; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--muted); padding: 3px 6px; cursor: pointer; }
     .dir-button:hover, .dir-button.active { color: var(--text); border-color: var(--accent); background: var(--soft); }
@@ -1281,6 +1287,7 @@ function renderHtml() {
     .maximized-tag-controls { display: none; align-items: center; gap: 4px; }
     .snap-overlay.maximized .maximized-tag-controls { display: inline-flex; }
     .snap-overlay.maximized .snap-text { max-width: 980px; margin: 0 auto; white-space: normal; line-height: 1.5; font-size: var(--maximized-size, 15px); font-weight: 400; }
+    .snap-overlay.maximized .maximized-sticky-title { top: 54px; max-width: min(980px, calc(100% - 48px)); margin: 8px auto 10px; }
     .snap-overlay.maximized .snap-text h1, .snap-overlay.maximized .snap-text h2, .snap-overlay.maximized .snap-text h3 { margin: 16px 0 8px; }
     .snap-overlay.maximized .snap-text p { margin: 0 0 12px; }
     .snap-overlay.maximized .snap-text ul, .snap-overlay.maximized .snap-text ol { padding-inline-start: 1.4em; }
@@ -1385,6 +1392,9 @@ function renderHtml() {
             <option value="collapsed">Collapsed</option>
             <option value="expanded">Expanded</option>
           </select>
+          <label class="inline-toggle" title="Keep a small section title visible while scrolling Local results and maximized sections">
+            <input id="local-sticky-sections" type="checkbox"> Sticky titles
+          </label>
           <select id="local-copy-format">
             <option value="text">Pure text</option>
             <option value="html">Formatted text</option>
@@ -1401,6 +1411,7 @@ function renderHtml() {
           <span id="local-copy-feedback" class="copy-feedback"></span>
         </div>
       </div>
+      <div id="local-sticky-title" class="local-sticky-title" aria-live="polite"></div>
       <div id="local-answer" class="answer">Ready for local search.</div>
     </section>
     <section id="files-panel" class="panel">
@@ -1416,6 +1427,9 @@ function renderHtml() {
           </select>
           <button id="export-selected-files" class="secondary" type="button">Download...</button>
           <button id="save-selected-files-export" class="secondary" type="button">Export...</button>
+          <label class="inline-toggle" title="Toggle sticky section titles in Local regular and maximized modes">
+            <input id="files-sticky-sections" type="checkbox"> Sticky local titles
+          </label>
           <span id="rename-source-feedback" class="copy-feedback"></span>
           <span id="merge-sources-feedback" class="copy-feedback"></span>
           <span id="delete-sources-feedback" class="copy-feedback"></span>
@@ -1608,6 +1622,7 @@ function renderHtml() {
           <label>Size <input id="snap-size" type="range" min="24" max="72" value="34"></label>
           <button id="snap-close" class="secondary" type="button">Close</button>
         </div>
+      <div id="maximized-sticky-title" class="local-sticky-title maximized-sticky-title" aria-live="polite"></div>
       <div id="snap-text" class="snap-text"></div>
     </div>
   </div>
@@ -1633,6 +1648,9 @@ function renderHtml() {
     const localCopyFeedback = document.querySelector("#local-copy-feedback");
     const localResultView = document.querySelector("#local-result-view");
     const localResultExpand = document.querySelector("#local-result-expand");
+    const localStickySections = document.querySelector("#local-sticky-sections");
+    const filesStickySections = document.querySelector("#files-sticky-sections");
+    const localStickyTitle = document.querySelector("#local-sticky-title");
     const tabs = document.querySelectorAll(".tab");
     const filesBody = document.querySelector("#files-body");
     const filesFilter = document.querySelector("#files-filter");
@@ -1695,8 +1713,10 @@ function renderHtml() {
     const noteMedia = document.querySelector("#note-media");
     const noteMediaFeedback = document.querySelector("#note-media-feedback");
     const snapOverlay = document.querySelector("#snap-overlay");
+    const snapBox = document.querySelector(".snap-box");
     const snapTitle = document.querySelector("#snap-title");
     const snapText = document.querySelector("#snap-text");
+    const maximizedStickyTitle = document.querySelector("#maximized-sticky-title");
     const snapSize = document.querySelector("#snap-size");
     const snapClose = document.querySelector("#snap-close");
     const maximizedTextSmaller = document.querySelector("#maximized-text-smaller");
@@ -1766,6 +1786,9 @@ function renderHtml() {
       localStorage.setItem("llm-wiki-snap-size", snapSize.value);
     });
     let maximizedTextSize = Number(localStorage.getItem("llm-wiki-maximized-text-size") || 15);
+    let stickySectionTitlesEnabled = localStorage.getItem("llm-wiki-sticky-section-titles") !== "0";
+    let lastWindowScrollY = window.scrollY || 0;
+    let lastSnapScrollTop = 0;
     applyMaximizedTextSize();
     maximizedTextSmaller.addEventListener("click", () => adjustMaximizedTextSize(-1));
     maximizedTextLarger.addEventListener("click", () => adjustMaximizedTextSize(1));
@@ -1787,6 +1810,13 @@ function renderHtml() {
       localStorage.setItem("llm-wiki-local-result-expand", localResultExpand.value);
       renderLocalResultBox({ preserveHighlights: true });
     });
+    syncStickySectionTitleControls();
+    [localStickySections, filesStickySections].forEach((control) => {
+      control?.addEventListener("change", () => setStickySectionTitlesEnabled(Boolean(control.checked)));
+    });
+    window.addEventListener("scroll", () => updateLocalStickySectionTitle(), { passive: true });
+    window.addEventListener("resize", () => updateAllStickySectionTitles(), { passive: true });
+    snapBox?.addEventListener("scroll", () => updateMaximizedStickySectionTitle(), { passive: true });
 
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => {
@@ -1802,6 +1832,7 @@ function renderHtml() {
         }
         if (tab.dataset.tab === "provider") loadProviderStatus();
         if (tab.dataset.tab === "notes") loadNotes();
+        updateAllStickySectionTitles();
       });
     });
 
@@ -3144,9 +3175,18 @@ function renderHtml() {
       applyHighlightAnnotations(localAnswer);
       applyNoteAnnotations(localAnswer);
       updateAnnotationIndicators();
+      updateLocalStickySectionTitle();
     }
 
-    localAnswer.addEventListener("click", (event) => {
+    localAnswer.addEventListener("click", handleLocalSectionClick);
+    snapText.addEventListener("click", (event) => {
+      if (!snapOverlay.classList.contains("maximized")) return;
+      handleLocalSectionClick(event);
+    });
+    localAnswer.addEventListener("toggle", () => updateLocalStickySectionTitle(), true);
+    snapText.addEventListener("toggle", () => updateMaximizedStickySectionTitle(), true);
+
+    function handleLocalSectionClick(event) {
       const maximizeButton = event.target.closest?.(".local-maximize-button");
       if (maximizeButton) {
         event.preventDefault();
@@ -3176,7 +3216,8 @@ function renderHtml() {
       setNodeDirection(body, dir, align);
       setNodeDirection(title, dir, align);
       body?.querySelectorAll("p, li, h1, h2, h3, h4").forEach((item) => setNodeDirection(item, dir, align));
-    });
+      updateAllStickySectionTitles();
+    }
 
     function maximizeLocalSection(button) {
       const nested = button.closest(".local-nested");
@@ -3187,9 +3228,21 @@ function renderHtml() {
       const sourceRef = details.closest(".local-result")?.querySelector(".source-ref");
       const titleText = title?.innerText?.trim() || "Local section";
       const bodyHtml = body?.innerHTML || "";
-      currentMaximizedSource = { body };
+      const sourceBody = sourceBodyForMaximizedButton(button, titleText, nested) || body;
+      currentMaximizedSource = { body: sourceBody };
       const html = '<h1>' + escapeHtml(titleText) + '</h1><div id="maximized-section-body">' + bodyHtml + '</div>';
       if (bodyHtml.trim()) openMaximizedSection(html, titleText, sourceRef?.textContent || "");
+    }
+
+    function sourceBodyForMaximizedButton(button, titleText, nested) {
+      if (!snapText.contains(button) || !currentMaximizedSource?.body) return null;
+      syncMaximizedSectionToSource();
+      const selector = nested ? ".local-nested" : ".local-result";
+      const bodySelector = nested ? ".local-nested-body" : ".local-result-body";
+      const titleSelector = nested ? ".local-nested-title" : ".local-result-title";
+      const candidates = Array.from(currentMaximizedSource.body.querySelectorAll(selector));
+      const match = candidates.find((details) => (details.querySelector(titleSelector)?.innerText?.trim() || "") === titleText);
+      return match?.querySelector(bodySelector) || null;
     }
 
     async function copyLocalSection(button) {
@@ -3212,6 +3265,84 @@ function renderHtml() {
       } finally {
         setTimeout(() => { button.textContent = original; }, 1200);
       }
+    }
+
+    function syncStickySectionTitleControls() {
+      [localStickySections, filesStickySections].forEach((control) => {
+        if (control) control.checked = stickySectionTitlesEnabled;
+      });
+      updateAllStickySectionTitles();
+    }
+
+    function setStickySectionTitlesEnabled(enabled) {
+      stickySectionTitlesEnabled = Boolean(enabled);
+      localStorage.setItem("llm-wiki-sticky-section-titles", stickySectionTitlesEnabled ? "1" : "0");
+      syncStickySectionTitleControls();
+    }
+
+    function updateAllStickySectionTitles() {
+      updateLocalStickySectionTitle();
+      updateMaximizedStickySectionTitle();
+    }
+
+    function updateLocalStickySectionTitle() {
+      const nextScrollY = window.scrollY || 0;
+      const direction = nextScrollY < lastWindowScrollY ? "up" : "down";
+      lastWindowScrollY = nextScrollY;
+      if (!localStickyTitle) return;
+      if (!stickySectionTitlesEnabled || !document.querySelector("#local-panel")?.classList.contains("active") || localResultView.value === "plain") {
+        hideStickySectionTitle(localStickyTitle);
+        return;
+      }
+      updateStickySectionTitle(localAnswer, localStickyTitle, direction, 116);
+    }
+
+    function updateMaximizedStickySectionTitle() {
+      const nextScrollTop = snapBox?.scrollTop || 0;
+      const direction = nextScrollTop < lastSnapScrollTop ? "up" : "down";
+      lastSnapScrollTop = nextScrollTop;
+      if (!maximizedStickyTitle) return;
+      if (!stickySectionTitlesEnabled || !snapOverlay.classList.contains("maximized") || snapOverlay.style.display !== "flex") {
+        hideStickySectionTitle(maximizedStickyTitle);
+        return;
+      }
+      const snapTop = snapBox?.getBoundingClientRect?.().top || 0;
+      updateStickySectionTitle(snapText, maximizedStickyTitle, direction, snapTop + 88);
+    }
+
+    function updateStickySectionTitle(container, badge, direction, threshold) {
+      const candidates = Array.from(container.querySelectorAll("[data-sticky-title]"))
+        .filter((item) => item.open !== false && item.getBoundingClientRect().height > 0);
+      if (!candidates.length) {
+        hideStickySectionTitle(badge);
+        return;
+      }
+      const positioned = candidates.map((item) => ({ item, rect: item.getBoundingClientRect() }));
+      let selected = null;
+      if (direction === "up") {
+        selected = positioned.find(({ rect }) => rect.top >= threshold - 2)?.item || null;
+      }
+      if (!selected) {
+        for (const { item, rect } of positioned) {
+          if (rect.top <= threshold + 2) selected = item;
+          if (rect.top > threshold + 2) break;
+        }
+      }
+      if (!selected) selected = positioned[0]?.item || null;
+      const title = selected?.dataset?.stickyTitle || "";
+      if (!title) {
+        hideStickySectionTitle(badge);
+        return;
+      }
+      badge.textContent = title;
+      badge.dataset.direction = direction;
+      badge.classList.add("visible");
+    }
+
+    function hideStickySectionTitle(badge) {
+      badge.classList.remove("visible");
+      badge.textContent = "";
+      delete badge.dataset.direction;
     }
 
     function renderLocalStructured(markdown) {
@@ -3311,7 +3442,7 @@ function renderHtml() {
     function renderLocalResultDetails(result, index) {
       const open = shouldOpenLocalResult(index) ? " open" : "";
       const body = result.body.join("\\n").trim();
-      return '<details class="local-result"' + open + '>' +
+      return '<details class="local-result"' + open + ' data-sticky-title="' + escapeHtml(result.title) + '">' +
         '<summary><span class="local-result-heading"><span class="local-result-title" dir="auto">' + escapeHtml(result.title) + '</span>' + renderLocalCopyControls() + renderDirectionControls() + '</span></summary>' +
         '<div class="local-result-body" dir="auto">' +
         (result.ref ? '<p class="source-ref" dir="ltr">' + inlineMarkdown(result.ref) + '</p>' : '') +
@@ -3341,7 +3472,7 @@ function renderHtml() {
       const sectionsHtml = sections.map((section, index) => {
         const open = index === 0 ? " open" : "";
         const body = section.lines.join("\\n").trim();
-        return '<details class="local-nested"' + open + '>' +
+        return '<details class="local-nested"' + open + ' data-sticky-title="' + escapeHtml(section.title) + '">' +
           '<summary><span class="local-result-heading"><span class="local-nested-title" dir="auto">' + inlineMarkdown(section.title) + '</span>' + renderLocalCopyControls() + renderDirectionControls() + '</span></summary>' +
           '<div class="local-nested-body" dir="auto">' +
           (body ? renderMarkdown(body) : '<p class="muted">No content in this section.</p>') +
@@ -3571,6 +3702,7 @@ function renderHtml() {
 
     function openSnap(text, title) {
       snapOverlay.classList.remove("maximized");
+      hideStickySectionTitle(maximizedStickyTitle);
       snapTitle.textContent = title || "Snap";
       snapText.textContent = text;
       snapOverlay.style.setProperty("--snap-size", snapSize.value + "px");
@@ -3592,6 +3724,8 @@ function renderHtml() {
       applyNoteAnnotations(snapText);
       applyMaximizedTextSize();
       snapOverlay.style.display = "flex";
+      lastSnapScrollTop = 0;
+      updateMaximizedStickySectionTitle();
     }
 
     function parseSourceRefText(value) {
@@ -3628,6 +3762,7 @@ function renderHtml() {
       delete snapText.dataset.notePath;
       snapText.replaceChildren();
       currentMaximizedSource = null;
+      hideStickySectionTitle(maximizedStickyTitle);
     }
 
     function syncMaximizedSectionToSource() {
