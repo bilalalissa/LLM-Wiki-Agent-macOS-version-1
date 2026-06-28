@@ -1245,6 +1245,11 @@ function renderHtml() {
     .side-topic-sort { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 10px; }
     .side-topic-sort button { border: 1px solid var(--line); background: var(--panel); text-align: center; padding: 6px 4px; font-size: 12px; font-weight: 700; }
     .side-topic-sort button.active { border-color: var(--accent); background: var(--soft); color: var(--accent); }
+    .side-topic-group-row { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+    .side-topic-group-row label { flex: 0 0 auto; font-size: 12px; font-weight: 700; color: var(--muted); }
+    .side-topic-group-row select { min-width: 0; flex: 1 1 auto; box-sizing: border-box; padding: 7px; font-size: 13px; }
+    .side-topic-group-heading { display: flex; align-items: center; gap: 8px; margin: 11px 0 5px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0; }
+    .side-topic-group-heading::before, .side-topic-group-heading::after { content: ""; height: 1px; flex: 1 1 auto; background: color-mix(in srgb, var(--line) 58%, transparent); }
     .side-topic-meta { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
     .side-topic-title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
     .side-topic-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -1256,6 +1261,9 @@ function renderHtml() {
     .local-result-heading .annotation-badges { margin-inline-start: auto; }
     #topic-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 10px; }
     .side-topics button:not(.side-topic-toggle) { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 7px 4px; color: var(--text); cursor: pointer; border-radius: 4px; }
+    #topic-list button.side-topic-recent-1 { background: color-mix(in srgb, var(--accent) 23%, var(--panel)); }
+    #topic-list button.side-topic-recent-2 { background: color-mix(in srgb, var(--accent) 15%, var(--panel)); }
+    #topic-list button.side-topic-recent-3 { background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
     .side-topics button:hover { background: var(--soft); }
     .status { font-size: 13px; color: var(--muted); margin: -6px 0 16px; }
     .provider-state { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 12px; font-weight: 700; }
@@ -1569,6 +1577,16 @@ function renderHtml() {
           <button type="button" data-sort-key="date" title="Toggle date sorting">Date</button>
           <button type="button" data-sort-key="alpha" title="Toggle alphabetical sorting">A-Z</button>
         </div>
+        <div class="side-topic-group-row">
+          <label for="side-topic-group">Group by</label>
+          <select id="side-topic-group" title="Group topic results">
+            <option value="date">Date added</option>
+            <option value="vault">Vault</option>
+            <option value="tags">Tags</option>
+            <option value="language">Language A-Z</option>
+            <option value="none">Clear grouping</option>
+          </select>
+        </div>
       </div>
     </div>
     <div id="topic-list" class="muted">Loading...</div>
@@ -1700,6 +1718,7 @@ function renderHtml() {
     const sideTopicFrom = document.querySelector("#side-topic-from");
     const sideTopicTo = document.querySelector("#side-topic-to");
     const sideTopicSortButtons = document.querySelectorAll(".side-topic-sort button");
+    const sideTopicGroup = document.querySelector("#side-topic-group");
     const statusEl = document.querySelector("#status");
     const themeSelect = document.querySelector("#theme-select");
     const openObsidianButton = document.querySelector("#open-obsidian");
@@ -1742,6 +1761,7 @@ function renderHtml() {
     let sideTopicsLoading = false;
     let sideTopicsUpdatedAt = "";
     let sideTopicSortState = loadSideTopicSortState();
+    let sideTopicRecentKeys = loadSideTopicRecentKeys();
     let currentMaximizedSource = null;
     const maximizedViewStack = [];
     const tableSelection = {
@@ -1922,6 +1942,12 @@ function renderHtml() {
     sideTopicFrom.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
     sideTopicTo.addEventListener("focus", ensureSideTopicsLoaded);
     sideTopicTo.addEventListener("change", () => { ensureSideTopicsLoaded(); renderSideTopics(); });
+    sideTopicGroup.value = localStorage.getItem("llm-wiki-side-topic-group") || "date";
+    sideTopicGroup.addEventListener("change", () => {
+      localStorage.setItem("llm-wiki-side-topic-group", sideTopicGroup.value);
+      ensureSideTopicsLoaded();
+      renderSideTopics();
+    });
     sideTopicSortButtons.forEach((button) => {
       updateSideTopicSortButton(button);
       button.addEventListener("click", () => {
@@ -1936,6 +1962,8 @@ function renderHtml() {
       sideTopicTag.value = "";
       sideTopicFrom.value = "";
       sideTopicTo.value = "";
+      sideTopicGroup.value = "date";
+      localStorage.setItem("llm-wiki-side-topic-group", "date");
       renderSideTopics();
       sideTopicSearch.focus();
     });
@@ -2887,7 +2915,7 @@ function renderHtml() {
           if (from && String(topic.updated || "") < from) return false;
           if (to && String(topic.updated || "") > to) return false;
           if (!query) return true;
-          return [topic.title, topic.summary, topic.type, topic.vault, topic.updated, topic.created, topic.path, ...tags]
+          return [topic.title, topic.summary, topic.type, topic.vault, topic.updated, topic.created, topic.language, topic.path, ...tags]
             .some((value) => String(value || "").toLowerCase().includes(query));
         });
       const groupedTopics = groupSideTopics(topics);
@@ -2895,16 +2923,65 @@ function renderHtml() {
         topicList.textContent = sideTopicsCache.length ? "No matching topics." : "No topics yet.";
         return;
       }
-      topicList.innerHTML = groupedTopics.map((group) => {
-        const annotations = annotationSummaryForPath(group.topic.vault, group.topic.path);
-        const active = activeContentKeys().has(annotationKey(group.topic.vault, group.topic.path));
-        return '<button type="button" data-title="' + escapeHtml(group.topic.title) + '" data-vault="' + escapeHtml(group.topic.vault) + '" data-path="' + escapeHtml(group.topic.path) + '" title="' + escapeHtml(group.title) + '">' +
-          '<span class="side-topic-title-row"><span class="side-topic-title-text">' + escapeHtml(group.topic.title) + '</span>' + renderAnnotationBadges({ ...annotations, active }) + '</span>' +
-          '<span class="side-topic-meta">' + escapeHtml(group.meta) + '</span></button>';
-      }).join("");
+      topicList.innerHTML = renderSideTopicGroups(groupedTopics);
       topicList.querySelectorAll("button").forEach((item) => {
         item.addEventListener("click", () => openSideTopic(item));
       });
+    }
+
+    function renderSideTopicGroups(groupedTopics) {
+      const groupMode = sideTopicGroup.value || "date";
+      if (groupMode === "none") {
+        return groupedTopics.map(renderSideTopicButton).join("");
+      }
+      return groupedSideTopicBuckets(groupedTopics, groupMode).map((bucket) =>
+        '<div class="side-topic-group-heading">' + escapeHtml(bucket.label) + '</div>' +
+        bucket.items.map(renderSideTopicButton).join("")
+      ).join("");
+    }
+
+    function renderSideTopicButton(group) {
+        const annotations = annotationSummaryForPath(group.topic.vault, group.topic.path);
+        const active = activeContentKeys().has(annotationKey(group.topic.vault, group.topic.path));
+        const recentClass = recentTopicClass(group.topic);
+        return '<button class="' + recentClass + '" type="button" data-title="' + escapeHtml(group.topic.title) + '" data-vault="' + escapeHtml(group.topic.vault) + '" data-path="' + escapeHtml(group.topic.path) + '" title="' + escapeHtml(group.title) + '">' +
+          '<span class="side-topic-title-row"><span class="side-topic-title-text">' + escapeHtml(group.topic.title) + '</span>' + renderAnnotationBadges({ ...annotations, active }) + '</span>' +
+          '<span class="side-topic-meta">' + escapeHtml(group.meta) + '</span></button>';
+    }
+
+    function groupedSideTopicBuckets(groupedTopics, mode) {
+      const buckets = new Map();
+      for (const group of groupedTopics) {
+        for (const label of sideTopicGroupLabels(group, mode)) {
+          if (!buckets.has(label)) buckets.set(label, []);
+          buckets.get(label).push(group);
+        }
+      }
+      return Array.from(buckets.entries())
+        .sort(([a], [b]) => compareSideTopicGroupLabels(a, b, mode))
+        .map(([label, items]) => ({ label, items }));
+    }
+
+    function sideTopicGroupLabels(group, mode) {
+      if (mode === "vault") return [group.vault || "No vault"];
+      if (mode === "tags") return group.tags.length ? group.tags : ["No tags"];
+      if (mode === "language") return [group.language || "Unknown language"];
+      const value = group.dateAdded || "";
+      return [value ? value.slice(0, 10) : "No date"];
+    }
+
+    function compareSideTopicGroupLabels(a, b, mode) {
+      if (mode === "date") {
+        if (a === "No date") return 1;
+        if (b === "No date") return -1;
+        return String(b).localeCompare(String(a));
+      }
+      return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+    }
+
+    function recentTopicClass(topic) {
+      const index = sideTopicRecentKeys.indexOf(sideTopicVisitKey(topic.vault, topic.path));
+      return index >= 0 && index < 3 ? "side-topic-recent-" + (index + 1) : "";
     }
 
     function groupSideTopics(topics) {
@@ -2919,12 +2996,19 @@ function renderHtml() {
         const topic = sorted[0];
         const vaults = [...new Set(items.map((item) => item.vault).filter(Boolean))];
         const types = [...new Set(items.map((item) => item.type).filter(Boolean))];
+        const tags = [...new Set(items.flatMap((item) => item.tags || []).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+        const languages = [...new Set(items.map((item) => item.language).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
         const updated = sorted.map((item) => item.updated).filter(Boolean).sort().at(-1) || "";
+        const dateAdded = sorted.map((item) => item.created || item.updated).filter(Boolean).sort().at(-1) || "";
         const duplicateText = items.length > 1 ? " | " + items.length + " matches" : "";
         const vaultText = vaults.length > 1 ? " | " + vaults.length + " vaults" : vaults[0] ? " | " + vaults[0] : "";
         return {
           topic,
           updated,
+          dateAdded,
+          vault: vaults.length > 1 ? "Multiple vaults" : vaults[0] || "",
+          tags,
+          language: languages.length > 1 ? "multilingual" : languages[0] || "",
           meta: (types[0] || "topic") + (updated ? " | " + updated : "") + duplicateText + vaultText,
           title: items.map((item) => [item.vault, item.type, item.path].filter(Boolean).join(" | ")).join("\\n")
         };
@@ -3018,6 +3102,27 @@ function renderHtml() {
       localStorage.setItem("llm-wiki-side-topic-sort-state", JSON.stringify(sideTopicSortState));
     }
 
+    function loadSideTopicRecentKeys() {
+      try {
+        const saved = JSON.parse(localStorage.getItem("llm-wiki-side-topic-recent") || "[]");
+        return Array.isArray(saved) ? saved.map(String).filter(Boolean).slice(0, 3) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function recordSideTopicVisit(vault, path) {
+      const key = sideTopicVisitKey(vault, path);
+      if (!key) return;
+      sideTopicRecentKeys = [key, ...sideTopicRecentKeys.filter((item) => item !== key)].slice(0, 3);
+      localStorage.setItem("llm-wiki-side-topic-recent", JSON.stringify(sideTopicRecentKeys));
+      renderSideTopics();
+    }
+
+    function sideTopicVisitKey(vault, path) {
+      return [String(vault || "").trim(), normalizeAnnotationPath(path)].filter(Boolean).join("|");
+    }
+
     function normalizeTopicTitle(title) {
       return String(title || "").trim().toLowerCase().replace(/\\s+/g, " ");
     }
@@ -3068,6 +3173,7 @@ function renderHtml() {
 
     async function openSideTopic(item) {
       const title = item.dataset.title;
+      recordSideTopicVisit(item.dataset.vault, item.dataset.path);
       const question = "Tell me about " + title;
       const hasSearchText = Boolean(input.value.trim() || localInput.value.trim());
       const hasResultContent = Boolean(lastChatMarkdown.trim() || lastLocalMarkdown.trim());

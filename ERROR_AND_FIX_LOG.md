@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-28 - Sidebar Needed Group Separators And Recent Topic Highlights
+
+- **Area:** `src/server.mjs`, `src/topics.mjs`
+- **Symptom:** Sidebar search results appeared as one continuous list, and recently visited topics were not visually distinguished in their normal list positions.
+- **Cause:** Topic metadata did not expose language, the sidebar had only sorting/filtering controls, and no recent topic visit state was persisted for styling.
+- **Fix:** Added a persisted Group by selector with date/vault/tag/language/no-group modes, subtle group separators, frontmatter language extraction, and theme-aware background highlights for the three most recently opened sidebar topics without reordering the list.
+- **Verification:** `node --check src/server.mjs`, `node --check src/topics.mjs`, app reinstall/open, served HTML marker checks for grouping/recent UI, extracted served script `node --check`, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-28 - Merge Sources Needed Explicit Original-Handling Cancel Option
 
 - **Area:** `src/server.mjs`

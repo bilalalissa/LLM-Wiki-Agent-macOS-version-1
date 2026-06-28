@@ -56,6 +56,7 @@ async function topicsFromIndexAsync(vaultPath, vault, index) {
       updated: cells[3],
       tags: frontmatter.tags,
       created: frontmatter.created,
+      language: frontmatter.language,
       element: cells[1]
     });
     if (lineIndex % 20 === 19) await yieldToEventLoop();
@@ -86,6 +87,7 @@ function topicsFromIndex(vaultPath, vault, index) {
       updated: cells[3],
       tags: frontmatter.tags,
       created: frontmatter.created,
+      language: frontmatter.language,
       element: cells[1]
     });
   }
@@ -139,6 +141,7 @@ function topicFromWikiFile(vaultPath, vault, file) {
     updated: frontmatter.updated || updatedFromStat(file),
     tags: frontmatter.tags,
     created: frontmatter.created,
+    language: frontmatter.language,
     element: frontmatter.type || typeFromPath(rel)
   };
 }
@@ -157,13 +160,14 @@ async function topicFromWikiFileAsync(vaultPath, vault, file) {
     updated: frontmatter.updated || updatedFromStat(file),
     tags: frontmatter.tags,
     created: frontmatter.created,
+    language: frontmatter.language,
     element: frontmatter.type || typeFromPath(rel)
   };
 }
 
 function parseFrontmatter(markdown) {
   const match = markdown.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return { tags: [], created: "", updated: "", title: "", type: "" };
+  if (!match) return { tags: [], created: "", updated: "", title: "", type: "", language: "" };
   const block = match[1];
   const tags = [];
   const inlineTags = block.match(/^tags:\s*\[([^\]]*)\]\s*$/m);
@@ -176,9 +180,10 @@ function parseFrontmatter(markdown) {
   }
   const title = frontmatterValue(block, "title");
   const type = frontmatterValue(block, "type");
+  const language = frontmatterValue(block, "language");
   const created = block.match(/^created:\s*(.+)$/m)?.[1]?.trim() || "";
   const updated = block.match(/^updated:\s*(.+)$/m)?.[1]?.trim() || "";
-  return { tags: [...new Set(tags)], created, updated, title, type };
+  return { tags: [...new Set(tags)], created, updated, title, type, language };
 }
 
 function frontmatterValue(block, key) {
