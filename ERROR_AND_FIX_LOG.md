@@ -1,5 +1,13 @@
 # Error And Fix Log
 
+## 2026-06-28 - Merge Sources Needed Explicit Original-Handling Cancel Option
+
+- **Area:** `src/server.mjs`
+- **Symptom:** The Files tab merge flow used a two-button confirmation where Cancel meant "keep originals active," leaving no clear way to cancel the merge after entering a title.
+- **Cause:** `window.confirm` only supports OK/Cancel, so it could not represent archive originals, keep originals, and cancel as three distinct outcomes.
+- **Fix:** Replaced the confirmation with an explicit prompt: `1` archives/removes originals from active references, `2` keeps originals active, and Cancel/empty/invalid input stops before calling `/api/merge-sources` with clear feedback.
+- **Verification:** `node --check src/server.mjs`, app reinstall/open, served HTML marker check for the new merge choice text, extracted served script `node --check`, and `LLM_WIKI_DISABLE_EXTERNAL_VIDEO_DOWNLOAD=1 npm test`.
+
 ## 2026-06-25 - Closing Sub-Maximized Sections Exited The Reader
 
 - **Area:** `src/server.mjs`

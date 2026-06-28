@@ -2179,7 +2179,25 @@ function renderHtml() {
       }
       const title = window.prompt("Merged source title", "Merged source from " + selected.length + " sources");
       if (!title) return;
-      const archiveOriginals = window.confirm("After creating the merged source, archive the original selected sources and remove them from active wiki references?\\n\\nChoose OK to archive originals, or Cancel to keep them active.");
+      const originalChoice = window.prompt(
+        "After creating the merged source, choose how to handle the original selected sources:\\n\\n" +
+        "1 = merge and archive/delete originals from active references\\n" +
+        "2 = merge and keep originals active\\n\\n" +
+        "Cancel or leave empty = cancel merge",
+        "2"
+      );
+      if (originalChoice === null || !originalChoice.trim()) {
+        mergeSourcesFeedback.textContent = "Merge canceled";
+        setTimeout(() => { mergeSourcesFeedback.textContent = ""; }, 2200);
+        return;
+      }
+      const normalizedChoice = originalChoice.trim();
+      if (normalizedChoice !== "1" && normalizedChoice !== "2") {
+        mergeSourcesFeedback.textContent = "Merge canceled. Choose 1 or 2 next time.";
+        setTimeout(() => { mergeSourcesFeedback.textContent = ""; }, 3200);
+        return;
+      }
+      const archiveOriginals = normalizedChoice === "1";
       mergeSourcesButton.disabled = true;
       mergeSourcesFeedback.textContent = "Merging...";
       try {
